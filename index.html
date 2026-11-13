@@ -72,6 +72,7 @@
   #dtrain{font-size:18px;font-weight:700}
   #dstate{opacity:.85;margin:2px 0 6px;min-height:18px}
   #dreq{font-size:24px;font-weight:800;color:#ffd23f;min-height:30px}
+  #lockhint{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);padding:8px 14px;font-size:13px;opacity:.9;pointer-events:none;text-align:center;max-width:34vw}
   #dboard{position:fixed;left:12px;bottom:14px;padding:10px 14px;min-width:270px;font-size:13px}
   #dboard .row{margin:4px 0;display:flex;gap:8px;align-items:center}
   #dboard i{width:10px;height:10px;border-radius:50%;display:inline-block}
@@ -120,6 +121,7 @@
   <div id="dreq"></div>
 </div>
 <div id="dboard" class="dispOnly panel"></div>
+<div id="lockhint" class="dispOnly panel">Click the scene (or press L) to lock the cursor - then WASD to walk, mouse to look</div>
 <div id="dtools">
   <div id="whistleBtn" class="tool panel">
     <svg viewBox="0 0 64 40" width="62" height="40"><rect x="2" y="12" width="30" height="14" rx="3" fill="#cfd6db"/><circle cx="44" cy="22" r="15" fill="#e8edf0"/><circle cx="44" cy="22" r="5" fill="#2b3a44"/></svg>
@@ -138,7 +140,9 @@
     <table id="ctlDisp" class="hidden">
       <tr><td><kbd>Space</kbd></td><td>Blow the whistle</td></tr>
       <tr><td><kbd>G</kbd></td><td>Raise / lower the green light (round board on a pole)</td></tr>
-      <tr><td>Mouse / <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td>Look around the platform</td></tr>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Walk along the platform (hold <kbd>Shift</kbd> to hurry)</td></tr>
+      <tr><td>Click / <kbd>L</kbd></td><td>Lock the cursor to look around freely (<kbd>Esc</kbd> to release)</td></tr>
+      <tr><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td>Turn your head</td></tr>
       <tr><td><kbd>M</kbd></td><td>Mute all sound</td></tr>
       <tr><td><kbd>T</kbd> / <kbd>Y</kbd></td><td>Change time of day / weather</td></tr>
       <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart the shift</td></tr>
@@ -860,7 +864,8 @@ function resetDisp(){
   const name=ALL_STATIONS.includes(CFG.station)?CFG.station:'Sebford Central';
   D.name=name;D.lines=['aqua','airlink'].filter(id=>OUT[id].stops.some(x=>x.name===name));
   const P=OUT[D.lines[0]],st=P.stops.find(x=>x.name===name),sp=Math.min(P.L-3,st.s+55);
-  D.stand=P.railPt(sp,P.side*4.2);D.base=P.YAW[sp];            // stand near the end of the platform, looking back along the tracks
+  D.P=P;D.stS=st.s;D.ps=sp;D.po=4.2;D.yaw=P.YAW[sp];D.pitch=-0.04;D.mlook=0;   // stand near the end of the platform, looking back along the tracks
+  D.stand=P.railPt(D.ps,P.side*D.po);
   Object.assign(D,{time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,log:[]});
   for(const t of aiTrains)scene.remove(t.tr.group);
   aiTrains=['aqua','airlink'].map((id,k)=>{
@@ -967,8 +972,21 @@ function endShift(){
 function stepDisp(dt){
   if(D.over)return;
   D.time+=dt;
-  if(keys.ArrowLeft)D.alook=Math.min(1.3,D.alook+1.4*dt);
-  if(keys.ArrowRight)D.alook=Math.max(-1.3,D.alook-1.4*dt);
+  if(keys.ArrowLeft)D.yaw+=1.6*dt;
+  if(keys.ArrowRight)D.yaw-=1.6*dt;
+  // walk along the platform: W/S forward/back, A/D sideways (Shift to hurry)
+  {
+    const fw=(keys.KeyW?1:0)-(keys.KeyS?1:0),sd=(keys.KeyD?1:0)-(keys.KeyA?1:0);
+    if(fw||sd){
+      const sp=(keys.ShiftLeft||keys.ShiftRight?6:3.2)*dt,len=Math.hypot(fw,sd)||1;
+      const fx=-Math.sin(D.yaw),fz=-Math.cos(D.yaw),rx=-fz,rz=fx;          // camera forward and right in world space
+      const wx=(fx*fw+rx*sd)/len*sp,wz=(fz*fw+rz*sd)/len*sp;
+      const p=D.P.at(D.ps),side=D.P.side;
+      D.ps=clamp(D.ps+wx*p.tx+wz*p.tz,D.stS-66,D.stS+66);                  // along the track
+      D.po=clamp(D.po+(wx*-p.tz+wz*p.tx)*side,2.5,7.2);                     // towards / away from the track edge
+      D.stand=D.P.railPt(D.ps,side*D.po);
+    }
+  }
   for(const t of aiTrains)stepAI(t,dt);
   const mt=myTrain();
   // a green light on its own is enough for a 'light' train once it has been held up for a moment
@@ -1003,13 +1021,28 @@ function renderDisp(dt){
   train.visible=false;
   camera.rotation.order='YXZ';
   camera.position.set(D.stand.x,2.7,D.stand.z);
-  camera.rotation.set(-0.04,D.base+D.mlook+D.alook,0);
+  camera.rotation.set(D.pitch,D.yaw+(D.locked?0:D.mlook),0);
   skyGroup.position.copy(camera.position);
   headlight.intensity=0;
   updateRain(dt);updateFlyer();
   renderer.render(scene,camera);
 }
-addEventListener('mousemove',e=>{if(ROLE==='dispatcher')D.mlook=-(e.clientX/innerWidth-0.5)*2.4;});
+/* mouse look: lock the cursor (click the scene, or press L) to look freely; unlocked, the mouse position gently turns your head */
+const gameCanvas=document.getElementById('c');
+function toggleLock(){
+  if(document.pointerLockElement===gameCanvas)document.exitPointerLock();
+  else if(gameCanvas.requestPointerLock){try{gameCanvas.requestPointerLock();}catch(e){}}
+}
+document.addEventListener('pointerlockchange',()=>{
+  D.locked=document.pointerLockElement===gameCanvas;
+  const h=$('lockhint');if(h)h.style.display=D.locked?'none':'';
+});
+addEventListener('mousemove',e=>{
+  if(ROLE!=='dispatcher')return;
+  if(D.locked){D.yaw-=e.movementX*0.0025;D.pitch=clamp(D.pitch-e.movementY*0.0022,-1.1,1.0);}
+  else D.mlook=-(e.clientX/innerWidth-0.5)*2.4;
+});
+gameCanvas.addEventListener('click',()=>{if(ROLE==='dispatcher'&&started&&!D.locked)toggleLock();});
 $('whistleBtn').onclick=dispWhistle;
 $('lightBtn').onclick=dispLight;
 
@@ -1022,7 +1055,8 @@ addEventListener('keydown',e=>{
     if(e.code==='Space'){dispWhistle();return;}
     if(e.code==='KeyG'||e.code==='KeyE'){dispLight();return;}
     if(e.code==='KeyR'&&started){restartRole();return;}
-    if(['KeyD','KeyC','KeyW','KeyS','KeyH'].includes(e.code))return;
+    if(e.code==='KeyL'){toggleLock();return;}
+    if(['KeyD','KeyA','KeyC','KeyW','KeyS','KeyH'].includes(e.code))return;
   }
   if(e.code==='KeyD')pressDoor();
   if(e.code==='KeyC')camMode=camMode==='cab'?'chase':'cab';
