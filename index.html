@@ -129,17 +129,25 @@ const TRAIN_LEN = TRAIN_CARS * CAR_LEN + (TRAIN_CARS - 1) * CAR_GAP;
 const PLAT_HALF = 70;                              // platform half length
 const STOP_AHEAD = 60;                             // stop board is 60 m past station centre
 
-/* Both lines share the track from Sebford Central to Westercoast. Only the line you pick is built. */
-const SHARED_WP = [
+/* The lines have separate tracks. Aqua and Airlink run side by side (4 m apart) from Sebford Central to
+   Westercoast, then split. Both networks are always built; the line you pick is the one you drive. */
+const AQUA_SHARED = [
   [-150,0],[-75,0],[0,0],[75,0],[150,0],[300,0],[500,0],[700,20],[880,90],[980,230],
   [1010,400],[1010,500],[1010,600],[1010,700],[1000,850],[930,1000],[780,1090],[600,1110],
   [450,1110],[350,1110]
 ];
+function offsetRight(wps,d){   // shift a waypoint list sideways (right of travel) to make a parallel track
+  return wps.map((p,i)=>{
+    const a=wps[Math.max(0,i-1)],b=wps[Math.min(wps.length-1,i+1)];
+    let tx=b[0]-a[0],tz=b[1]-a[1];const m=Math.hypot(tx,tz)||1;tx/=m;tz/=m;
+    return [Math.round((p[0]-tz*d)*100)/100,Math.round((p[1]+tx*d)*100)/100];
+  });
+}
 const LINES = {
   aqua: {
     id:'aqua', name:'Sebford Aqua', first:'Sebford', second:'Aqua', short:'Aqua line service',
-    color:'#00b4c0', colorHex:0x00b4c0, maxSet:31.3,
-    wp: SHARED_WP.concat([
+    color:'#00b4c0', colorHex:0x00b4c0, maxSet:31.3, side:-1,      // side: platforms on the left when running outbound
+    wp: AQUA_SHARED.concat([
       [250,1110],[150,1110],[0,1120],[-150,1200],[-250,1350],[-280,1500],
       [-230,1650],[-100,1780],[100,1850],[150,1870],[300,1990],[450,2050],[550,2050],[650,2050],
       [750,2050],[830,2050]]),
@@ -147,25 +155,23 @@ const LINES = {
       { name:'Sebford Central',   wp:[0,0] },
       { name:'Financial Quarter', wp:[1010,500] },
       { name:'Westercoast',       wp:[350,1110] },
-      { name:'Trent Docks',       wp:[650,2050] }],
-    pass:[]
+      { name:'Trent Docks',       wp:[650,2050] }]
   },
   airlink: {
     id:'airlink', name:'Sebford Airlink', first:'Sebford', second:'Airlink', short:'Airlink service',
-    color:'#f5821f', colorHex:0xf5821f, maxSet:35.8,
-    wp: SHARED_WP.concat([
-      [250,1110],[150,1110],[0,1110],[-200,1108],[-400,1105],[-600,1105],[-800,1120],[-950,1160],
-      [-1070,1240],[-1150,1360],[-1190,1470],[-1190,1560],[-1190,1650],[-1190,1730],
-      [-1170,1840],[-1100,1970],[-980,2080],[-820,2170],[-650,2235],[-550,2260],[-450,2260],[-350,2260],
-      [-200,2260],[-50,2260],[50,2260],[150,2260],[300,2260],[450,2260],[550,2260],[650,2260],[750,2260]]),
+    color:'#f5821f', colorHex:0xf5821f, maxSet:35.8, side:1,       // platforms on the right when running outbound
+    wp: offsetRight(AQUA_SHARED,4).concat([
+      [250,1106],[150,1106],[0,1108],[-200,1106],[-400,1104],[-600,1104],[-800,1120],[-950,1160],
+      [-1070,1240],[-1150,1360],[-1190,1480],[-1190,1600],[-1190,1740],[-1185,1900],
+      [-1170,2100],[-1140,2350],[-1080,2600],[-960,2770],[-780,2860],[-620,2895],[-500,2900],[-350,2900],
+      [-200,2900],[-50,2900],[50,2900],[150,2900],[300,2900],[450,2900],[550,2900],[650,2900],[750,2900]]),
     stops:[
       { name:'Sebford Central', wp:[0,0] },
       { name:'Westercoast',     wp:[350,1110] },
       { name:'Lars Crossing',   wp:[-1112,1300] },     // on the bend, so its platform curves with the track
-      { name:'Airport Plaza',   wp:[-450,2260] },
-      { name:'Terminal 1',      wp:[50,2260] },
-      { name:'Terminal 2',      wp:[550,2260] }],
-    pass:[{ name:'Financial Quarter', wp:[1010,500] }]
+      { name:'Airport Plaza',   wp:[-450,2900] },
+      { name:'Terminal 1',      wp:[50,2900] },
+      { name:'Terminal 2',      wp:[550,2900] }]
   }
 };
 
@@ -180,9 +186,9 @@ const CFG={
 const LINE=LINES[CFG.line], AIRLINK=CFG.line==='airlink';
 const WAYPOINTS=LINE.wp.map(p=>p.slice());
 const STATIONS=LINE.stops.map(x=>Object.assign({},x));
-const PASS=LINE.pass.map(x=>Object.assign({},x,{pass:true}));   // platforms the train runs through without stopping
 const REVERSE=CFG.route==='return';
 if(REVERSE){WAYPOINTS.reverse();STATIONS.reverse();}
+const PSIDE=LINE.side*(REVERSE?-1:1);   // which side of the driven direction the platforms are on (+1 = right)
 document.documentElement.style.setProperty('--aqua',LINE.color);
 document.title=LINE.name+' - Train Driver';
 
@@ -191,50 +197,54 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
 const rnd = mulberry32(20240607);
 const rr = (a,b)=>a+(b-a)*rnd();
 
-/* ---- build centre line, resampled to exactly 1 m spacing ---- */
-const curve = new THREE.CatmullRomCurve3(WAYPOINTS.map(p=>new THREE.Vector3(p[0],0,p[1])),false,'centripetal');
-const dense = curve.getPoints(WAYPOINTS.length*1000);
-const Px=[], Pz=[];
-{
-  Px.push(dense[0].x); Pz.push(dense[0].z);
-  let acc=0,next=1;
+/* ---- centre lines, resampled to exactly 1 m spacing ---- */
+function nearestIdx(P,x,z){let best=1e18,bi=0;for(let i=0;i<=P.L;i+=1){const d=(P.Px[i]-x)**2+(P.Pz[i]-z)**2;if(d<best){best=d;bi=i;}}return bi;}
+function makePath(wps){
+  const curve=new THREE.CatmullRomCurve3(wps.map(p=>new THREE.Vector3(p[0],0,p[1])),false,'centripetal');
+  const dense=curve.getPoints(wps.length*1000),Px=[],Pz=[];
+  Px.push(dense[0].x);Pz.push(dense[0].z);
+  let acc=0,nx=1;
   for(let i=1;i<dense.length;i++){
     const a=dense[i-1],b=dense[i],seg=Math.hypot(b.x-a.x,b.z-a.z);
-    while(acc+seg>=next){const t=(next-acc)/seg;Px.push(a.x+(b.x-a.x)*t);Pz.push(a.z+(b.z-a.z)*t);next++;}
+    while(acc+seg>=nx){const t=(nx-acc)/seg;Px.push(a.x+(b.x-a.x)*t);Pz.push(a.z+(b.z-a.z)*t);nx++;}
     acc+=seg;
   }
+  const L=Px.length-1,Tx=new Float32Array(L+1),Tz=new Float32Array(L+1),YAW=new Float32Array(L+1);
+  for(let i=0;i<=L;i++){
+    const a=Math.max(0,i-1),b=Math.min(L,i+1);
+    const dx=Px[b]-Px[a],dz=Pz[b]-Pz[a],m=Math.hypot(dx,dz)||1;
+    Tx[i]=dx/m;Tz[i]=dz/m;YAW[i]=Math.atan2(Tx[i],Tz[i]);
+  }
+  function at(s){
+    s=clamp(s,0,L-0.001);const i=Math.floor(s),f=s-i;
+    const tx=Tx[i]+(Tx[i+1]-Tx[i])*f,tz=Tz[i]+(Tz[i+1]-Tz[i])*f,m=Math.hypot(tx,tz)||1;
+    return {x:Px[i]+(Px[i+1]-Px[i])*f,z:Pz[i]+(Pz[i+1]-Pz[i])*f,tx:tx/m,tz:tz/m};
+  }
+  function railPt(s,off){const p=at(s);return {x:p.x-p.tz*off,z:p.z+p.tx*off,tx:p.tx,tz:p.tz};}   // off: right-positive
+  return {Px,Pz,L,Tx,Tz,YAW,at,railPt};
 }
-const L = Px.length-1;
-const Tx=new Float32Array(L+1), Tz=new Float32Array(L+1), YAW=new Float32Array(L+1);
-for(let i=0;i<=L;i++){
-  const a=Math.max(0,i-1),b=Math.min(L,i+1);
-  let dx=Px[b]-Px[a],dz=Pz[b]-Pz[a];const m=Math.hypot(dx,dz)||1;
-  Tx[i]=dx/m;Tz[i]=dz/m;YAW[i]=Math.atan2(Tx[i],Tz[i]);
+const OUT={aqua:makePath(LINES.aqua.wp),airlink:makePath(LINES.airlink.wp)};   // both networks, outbound direction
+for(const id of ['aqua','airlink']){
+  const P=OUT[id];P.id=id;P.side=LINES[id].side;P.cen=nearestIdx(P,0,0);
+  P.stops=LINES[id].stops.map(x=>Object.assign({},x,{s:nearestIdx(P,x.wp[0],x.wp[1])}));
 }
-function at(s){
-  s=clamp(s,0,L-0.001);const i=Math.floor(s),f=s-i;
-  let tx=Tx[i]+(Tx[i+1]-Tx[i])*f,tz=Tz[i]+(Tz[i+1]-Tz[i])*f;const m=Math.hypot(tx,tz)||1;
-  return {x:Px[i]+(Px[i+1]-Px[i])*f,z:Pz[i]+(Pz[i+1]-Pz[i])*f,tx:tx/m,tz:tz/m};
-}
+const P0=REVERSE?makePath(WAYPOINTS):OUT[CFG.line];     // the path you drive (reversed on the return run)
+const {Px,Pz,L,Tx,Tz,YAW,at}=P0;
 
-/* ---- stations: index along the line + stop board position ---- */
-STATIONS.concat(PASS).forEach(st=>{
-  let best=1e18,bi=0;
-  for(let i=0;i<=L;i++){const d=(Px[i]-st.wp[0])**2+(Pz[i]-st.wp[1])**2;if(d<best){best=d;bi=i;}}
-  st.s=bi; st.target=bi+STOP_AHEAD;
-});
-const CEN=STATIONS.find(x=>x.name==='Sebford Central');
-const SHED=REVERSE?[CEN.s-85,CEN.s+165]:[CEN.s-165,CEN.s+85];   // trainshed span along the path
+/* ---- stations you stop at: index along the driven path + stop board position ---- */
+STATIONS.forEach(st=>{st.s=nearestIdx(P0,st.wp[0],st.wp[1]);st.target=st.s+STOP_AHEAD;});
 
-
-/* ---- spatial hash of the track so scenery stays clear of it ---- */
+/* ---- spatial hash of both tracks so scenery stays clear of them ---- */
 const CELL=25,grid=new Map();
-for(let i=0;i<=L;i+=4){const key=Math.floor(Px[i]/CELL)+','+Math.floor(Pz[i]/CELL);(grid.get(key)||grid.set(key,[]).get(key)).push(i);}
+for(const id of ['aqua','airlink']){
+  const P=OUT[id];
+  for(let i=0;i<=P.L;i+=4){const key=Math.floor(P.Px[i]/CELL)+','+Math.floor(P.Pz[i]/CELL);(grid.get(key)||grid.set(key,[]).get(key)).push(P.Px[i],P.Pz[i]);}
+}
 function nearTrack(x,z,r){
   const cx=Math.floor(x/CELL),cz=Math.floor(z/CELL),n=Math.ceil(r/CELL);
   for(let a=-n;a<=n;a++)for(let b=-n;b<=n;b++){
     const arr=grid.get((cx+a)+','+(cz+b));if(!arr)continue;
-    for(const i of arr) if((Px[i]-x)**2+(Pz[i]-z)**2<r*r) return true;
+    for(let k=0;k<arr.length;k+=2) if((arr[k]-x)**2+(arr[k+1]-z)**2<r*r) return true;
   }
   return false;
 }
@@ -278,60 +288,53 @@ let headBase=0;       // headlight intensity chosen by time/weather
 /* ground, sea, beach */
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(6000,6000),lam(0x7db35c));ground.rotation.x=-Math.PI/2;ground.position.set(400,-0.3,1000);scene.add(ground);
 const SEA=[-800,450,550,1040], BEACH=[-800,470,1040,1078], DOCKWATER=[350,1100,2140,2700], QUAY=[400,900,2092,2142];
-function flatRect(r,y,mat){const m=new THREE.Mesh(new THREE.PlaneGeometry(r[1]-r[0],r[3]-r[2]),mat);m.rotation.x=-Math.PI/2;m.position.set((r[0]+r[1])/2,y,(r[2]+r[3])/2);scene.add(m);return m;}
+function flatRect(r,y,mat,parent){const m=new THREE.Mesh(new THREE.PlaneGeometry(r[1]-r[0],r[3]-r[2]),mat);m.rotation.x=-Math.PI/2;m.position.set((r[0]+r[1])/2,y,(r[2]+r[3])/2);(parent||scene).add(m);return m;}
 flatRect(SEA,-0.05,lam(0x2f86c4));
 flatRect(BEACH,-0.15,lam(0xe6d6a2));
-if(!AIRLINK){flatRect(DOCKWATER,-0.05,lam(0x2a5d7e));flatRect(QUAY,-0.12,lam(0x8d9296));}
+flatRect(DOCKWATER,-0.05,lam(0x2a5d7e));flatRect(QUAY,-0.12,lam(0x8d9296));
 
-/* ---- track (the Airlink is double track: a second line runs alongside on the left) ---- */
-const TRACK_OFFSETS=AIRLINK?[0,-4.0]:[0];       // right-positive offsets from the centre line
-function railPt(s,off){const p=at(s);return {x:p.x-p.tz*off,z:p.z+p.tx*off,tx:p.tx,tz:p.tz};}
-{
-  const dummy=new THREE.Object3D(),nT=TRACK_OFFSETS.length;
-  const rails=new THREE.InstancedMesh(new THREE.BoxGeometry(0.09,0.17,1),lam(0xa9acb0),L*2*nT);
+/* ---- track: each line has its own track ---- */
+const railMat=lam(0xa9acb0),sleeperMat=lam(0x6b5a4a),mastMat=lam(0x5a6168);
+const ballastMat=new THREE.MeshLambertMaterial({color:0x8a8780,side:THREE.DoubleSide});
+function buildTrack(P){
+  const {Px,Pz,L,at}=P,dummy=new THREE.Object3D();
+  const rails=new THREE.InstancedMesh(new THREE.BoxGeometry(0.09,0.17,1),railMat,L*2);
   let n=0;
-  for(const off of TRACK_OFFSETS)for(let i=0;i<L;i++){
+  for(let i=0;i<L;i++){
     const dx=Px[i+1]-Px[i],dz=Pz[i+1]-Pz[i],len=Math.hypot(dx,dz),rx=-dz/len,rz=dx/len;
-    for(const sd of [off-0.7175,off+0.7175]){
+    for(const sd of [-0.7175,0.7175]){
       dummy.position.set((Px[i]+Px[i+1])/2+rx*sd,0.285,(Pz[i]+Pz[i+1])/2+rz*sd);
       dummy.rotation.set(0,Math.atan2(dx,dz),0);dummy.scale.set(1,1,len*1.03);dummy.updateMatrix();rails.setMatrixAt(n++,dummy.matrix);
     }
   }
   scene.add(rails);
-  const sc=Math.floor(L/0.72),sleepers=new THREE.InstancedMesh(new THREE.BoxGeometry(2.6,0.15,0.28),lam(0x6b5a4a),sc*nT);
-  n=0;
-  for(const off of TRACK_OFFSETS)for(let i=0;i<sc;i++){
-    const p=railPt(i*0.72,off);dummy.position.set(p.x,0.125,p.z);dummy.rotation.set(0,Math.atan2(p.tx,p.tz),0);dummy.scale.set(1,1,1);dummy.updateMatrix();sleepers.setMatrixAt(n++,dummy.matrix);
+  const sc=Math.floor(L/0.72),sleepers=new THREE.InstancedMesh(new THREE.BoxGeometry(2.6,0.15,0.28),sleeperMat,sc);
+  for(let i=0;i<sc;i++){
+    const p=at(i*0.72);dummy.position.set(p.x,0.125,p.z);dummy.rotation.set(0,Math.atan2(p.tx,p.tz),0);dummy.scale.set(1,1,1);dummy.updateMatrix();sleepers.setMatrixAt(i,dummy.matrix);
   }
   scene.add(sleepers);
-  const ballastMat=new THREE.MeshLambertMaterial({color:0x8a8780,side:THREE.DoubleSide});
-  for(const off of TRACK_OFFSETS){
-    const pos=[],idx=[];let v=0;
-    for(let s=0;s<=L-2;s+=2){
-      const p=at(s),rx=-p.tz,rz=p.tx;
-      pos.push(p.x+rx*(off-1.95),0.1,p.z+rz*(off-1.95), p.x+rx*(off+1.95),0.1,p.z+rz*(off+1.95));
-      if(v>0){idx.push(v-2,v-1,v,v-1,v+1,v);}
-      v+=2;
-    }
-    const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
-    scene.add(new THREE.Mesh(bg,ballastMat));
+  const pos=[],idx=[];let v=0;
+  for(let s=0;s<=L-2;s+=2){
+    const p=at(s),rx=-p.tz,rz=p.tx;
+    pos.push(p.x-rx*1.95,0.1,p.z-rz*1.95, p.x+rx*1.95,0.1,p.z+rz*1.95);
+    if(v>0){idx.push(v-2,v-1,v,v-1,v+1,v);}
+    v+=2;
   }
-}
-/* overhead masts + wire (skipped inside Central trainshed) */
-{
-  const dummy=new THREE.Object3D(),count=Math.floor(L/50),masts=new THREE.InstancedMesh(new THREE.BoxGeometry(0.28,6.6,0.28),lam(0x5a6168),count+1);
-  let n=0;const wire=[];
-  const mastOff=AIRLINK?-2.0:-2.9;     // between the two tracks on the Airlink, beside the track on the Aqua
+  const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
+  scene.add(new THREE.Mesh(bg,ballastMat));
+  // overhead masts on the side away from the platforms (skipped inside the Central trainshed) + the wire
+  const count=Math.floor(L/50),masts=new THREE.InstancedMesh(new THREE.BoxGeometry(0.28,6.6,0.28),mastMat,count+1),wire=[];
+  n=0;
   for(let k=0;k<=count;k++){
-    const s=k*50+10,p=railPt(s,mastOff);
-    if(s>SHED[0]&&s<SHED[1])continue;
-    dummy.position.set(p.x,3.3,p.z);dummy.rotation.set(0,0,0);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
+    const s=k*50+10;if(s>P.cen-165&&s<P.cen+85)continue;
+    const p=P.railPt(s,-P.side*2.9);dummy.position.set(p.x,3.3,p.z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
   }
   masts.count=n;scene.add(masts);
-  for(const off of TRACK_OFFSETS)for(let s=0;s<L-6;s+=5){if(s>SHED[0]&&s<SHED[1])continue;const a=railPt(s,off),b=railPt(s+5,off);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
+  for(let s=0;s<L-6;s+=5){if(s>P.cen-165&&s<P.cen+85)continue;const a=at(s),b=at(s+5);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
   const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
   scene.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0x2d3338})));
 }
+buildTrack(OUT.aqua);buildTrack(OUT.airlink);
 
 /* ---- canvas label textures ---- */
 function labelTex(text,bg,fg,w,h){
@@ -348,58 +351,67 @@ function labelTex(text,bg,fg,w,h){
 const matLamp=new THREE.MeshBasicMaterial({color:0xfff3c4});
 const DS={side:THREE.DoubleSide};
 const matPlat=lam(0xbcbcb8,DS),matRoof=lam(0x2f4858,DS),matPost=lam(0x57656d),matYellow=lam(0xf2c500,DS);
-function pt(s,off,y){const p=railPt(s,off);return [p.x,y,p.z];}      // off: right-positive
 function ribbon(s0,s1,step,fn,mat){
   const pos=[],idx=[];let v=0;
   for(let s=s0;s<=s1+1e-6;s+=step){pos.push(...fn(s));if(v>0)idx.push(v-2,v-1,v,v-1,v+1,v);v+=2;}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);g.computeVertexNormals();
   const m=new THREE.Mesh(g,mat);scene.add(m);return m;
 }
-function put(w,h,d,mat,s,off,y){   // box standing beside the track, turned to follow it
-  const p=railPt(s,off),m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
-  m.position.set(p.x,y,p.z);m.rotation.y=Math.atan2(p.tx,p.tz);scene.add(m);return m;
+/* helpers bound to a path; `side` says which side of the path the platform is on (+1 right, -1 left) */
+function pathKit(P,side){
+  const pt=(s,off,y)=>{const p=P.railPt(s,off*side);return [p.x,y,p.z];};      // off = distance from the track towards the platform
+  const put=(w,h,d,mat,s,off,y)=>{
+    const p=P.railPt(s,off*side),m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+    m.position.set(p.x,y,p.z);m.rotation.y=Math.atan2(p.tx,p.tz);scene.add(m);return m;
+  };
+  const putPlane=(geo,mat,s,off,y,yawAdd)=>{
+    const p=P.railPt(s,off*side),m=new THREE.Mesh(geo,mat);
+    m.position.set(p.x,y,p.z);m.rotation.y=Math.atan2(p.tx,p.tz)+yawAdd;scene.add(m);return m;
+  };
+  return {pt,put,putPlane};
 }
-function putPlane(geo,mat,s,off,y,yawAdd){
-  const p=railPt(s,off),m=new THREE.Mesh(geo,mat);
-  m.position.set(p.x,y,p.z);m.rotation.y=Math.atan2(p.tx,p.tz)+yawAdd;scene.add(m);return m;
+function buildPlatforms(P){
+  const {pt,put,putPlane}=pathKit(P,P.side),signGeo=new THREE.PlaneGeometry(6,1.5),color=LINES[P.id].color;
+  P.stops.forEach(st=>{
+    const a=Math.max(1,st.s-PLAT_HALF),b=Math.min(P.L-2,st.s+PLAT_HALF);
+    ribbon(a,b,2,s=>[...pt(s,1.7,1.0),...pt(s,7.7,1.0)],matPlat);          // top
+    ribbon(a,b,2,s=>[...pt(s,1.7,0),...pt(s,1.7,1.0)],matPlat);            // edge walls
+    ribbon(a,b,2,s=>[...pt(s,7.7,0),...pt(s,7.7,1.0)],matPlat);
+    ribbon(a,b,2,s=>[...pt(s,1.95,1.012),...pt(s,2.3,1.012)],matYellow);   // yellow line
+    const ca=st.s-46,cb=st.s+46;                                           // canopy
+    ribbon(ca,cb,2,s=>[...pt(s,1.1,5.05),...pt(s,8.9,5.05)],matRoof);
+    ribbon(ca,cb,2,s=>[...pt(s,1.1,4.8),...pt(s,8.9,4.8)],matRoof);
+    ribbon(ca,cb,2,s=>[...pt(s,1.1,4.8),...pt(s,1.1,5.05)],matRoof);
+    ribbon(ca,cb,2,s=>[...pt(s,8.9,4.8),...pt(s,8.9,5.05)],matRoof);
+    for(let z=-45;z<=45;z+=15){put(0.3,4.8,0.3,matPost,st.s+z,7.4,2.4);put(0.5,0.12,1.4,matLamp,st.s+z,5.2,4.6);}
+    const nameTex=labelTex(st.name,color,'#ffffff');
+    for(const z of [-38,0,38])putPlane(signGeo,new THREE.MeshBasicMaterial({map:nameTex}),st.s+z,7.1,2.9,P.side*Math.PI/2);
+    const central=st.name==='Sebford Central';
+    put(10,5,34,lam(central?0xb5a58a:0xc9b79a),st.s-8,13.5,2.5);           // station building behind the platform
+    put(10.6,0.5,34.6,lam(0x6a4a3a),st.s-8,13.5,5.2);
+  });
 }
-STATIONS.concat(PASS).forEach((st,k)=>{
-  const a=Math.max(1,st.s-PLAT_HALF),b=Math.min(L-2,st.s+PLAT_HALF);
-  // platform: top, edge walls and the yellow line
-  ribbon(a,b,2,s=>[...pt(s,1.7,1.0),...pt(s,7.7,1.0)],matPlat);
-  ribbon(a,b,2,s=>[...pt(s,1.7,0),...pt(s,1.7,1.0)],matPlat);
-  ribbon(a,b,2,s=>[...pt(s,7.7,0),...pt(s,7.7,1.0)],matPlat);
-  ribbon(a,b,2,s=>[...pt(s,1.95,1.012),...pt(s,2.3,1.012)],matYellow);
-  // canopy
-  const ca=st.s-46,cb=st.s+46;
-  ribbon(ca,cb,2,s=>[...pt(s,1.1,5.05),...pt(s,8.9,5.05)],matRoof);
-  ribbon(ca,cb,2,s=>[...pt(s,1.1,4.8),...pt(s,8.9,4.8)],matRoof);
-  ribbon(ca,cb,2,s=>[...pt(s,1.1,4.8),...pt(s,1.1,5.05)],matRoof);
-  ribbon(ca,cb,2,s=>[...pt(s,8.9,4.8),...pt(s,8.9,5.05)],matRoof);
-  for(let z=-45;z<=45;z+=15){put(0.3,4.8,0.3,matPost,st.s+z,7.4,2.4);put(0.5,0.12,1.4,matLamp,st.s+z,5.2,4.6);}
-  const nameTex=labelTex(st.name,LINE.color,'#ffffff'),signGeo=new THREE.PlaneGeometry(6,1.5);
-  for(const z of [-38,0,38])putPlane(signGeo,new THREE.MeshBasicMaterial({map:nameTex}),st.s+z,7.1,2.9,Math.PI/2);
-  // stop board (not at stations the train runs through)
-  if(!st.pass){
-    const stopTex=labelTex('STOP  4 CAR','#c8102e','#ffffff',256,96);
+buildPlatforms(OUT.aqua);buildPlatforms(OUT.airlink);
+/* stop boards for the line you are driving, on the platform side for your direction of travel */
+{
+  const {put,putPlane}=pathKit(P0,PSIDE),stopTex=labelTex('STOP  4 CAR','#c8102e','#ffffff',256,96),g=new THREE.PlaneGeometry(2.4,0.9);
+  STATIONS.forEach(st=>{
     put(0.15,2.4,0.15,matPost,st.s+STOP_AHEAD+2,3.1,2.2);
-    putPlane(new THREE.PlaneGeometry(2.4,0.9),new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}),st.s+STOP_AHEAD+2,3.1,2.9,Math.PI);
-  }
-  // station building behind the platform
-  put(10,5,34,lam(st===CEN?0xb5a58a:0xc9b79a),st.s-8,13.5,2.5);
-  put(10.6,0.5,34.6,lam(0x6a4a3a),st.s-8,13.5,5.2);
-  if(st===CEN){ // Sebford Central trainshed + terminus wall (behind the train outbound, ahead of it on the return)
-    const f=new THREE.Group();f.position.set(Px[st.s],0,Pz[st.s]);f.rotation.y=YAW[st.s]+(REVERSE?Math.PI:0);scene.add(f);
-    const xs=REVERSE?-1:1;
-    box(16,0.5,236,lam(0x37505e),0,7.2,-32,f);
-    for(let z=-146;z<=82;z+=19){box(0.4,7.2,0.4,matPost,-7.6,3.6,z,f);box(0.4,7.2,0.4,matPost,7.6,3.6,z,f);box(0.6,0.12,1.4,matLamp,0,6.9,z,f);}
-    box(26,16,3,lam(0x8c7a62),0,8,-153,f);
-    if(!AIRLINK)box(6,1.0,170,matPlat,4.7*xs,0.5,-60,f);   // opposite platform (the Airlink has its second track here instead)
-  }
-});
+    putPlane(g,new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}),st.s+STOP_AHEAD+2,3.1,2.9,Math.PI);
+  });
+}
+/* Sebford Central: one trainshed over both tracks + terminus wall (outbound frame, Aqua track at x=0, Airlink 4 m to the right) */
+{
+  const s0=OUT.aqua.cen,f=new THREE.Group(),p=OUT.aqua.at(s0);
+  f.position.set(p.x,0,p.z);f.rotation.y=OUT.aqua.YAW[s0];scene.add(f);
+  const cx=-2;
+  box(22,0.5,236,lam(0x37505e),cx,7.2,-32,f);
+  for(let z=-146;z<=82;z+=19){box(0.4,7.2,0.4,matPost,cx-10.8,3.6,z,f);box(0.4,7.2,0.4,matPost,cx+10.8,3.6,z,f);box(0.6,0.12,1.4,matLamp,cx,6.9,z,f);}
+  box(34,16,3,lam(0x8c7a62),cx,8,-153,f);
+}
 /* buffer stops at both ends of every track */
-for(const [s0,dir] of [[1,-1],[L-1,1]])for(const off of TRACK_OFFSETS){
-  const p=railPt(s0,off),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
+for(const id of ['aqua','airlink'])for(const [s0,dir] of [[1,-1],[OUT[id].L-1,1]]){
+  const p=OUT[id].at(s0),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
   box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,dir*1,b);box(0.3,1.6,0.3,matPost,-1.2,0.8,dir*1.6,b);box(0.3,1.6,0.3,matPost,1.2,0.8,dir*1.6,b);
 }
 
@@ -419,14 +431,14 @@ const BMATS=TINTS.map(t=>{
   const [m,e]=winTex(t),w=new THREE.MeshLambertMaterial({map:m,emissive:0xffffff,emissiveMap:e,emissiveIntensity:0}),r=lam(0x7d858b);
   ENV_WIN.push(w);return [w,w,r,r,w,w];
 });
-function addBuilding(x,z,w,d,h,mats){
+function addBuilding(x,z,w,d,h,mats,parent){
   const geo=new THREE.BoxGeometry(w,h,d),uv=geo.attributes.uv;
   for(let i=0;i<24;i++){let su=1,sv=1;if(i<8){su=d/16;sv=h/16;}else if(i>=16){su=w/16;sv=h/16;}uv.setXY(i,uv.getX(i)*su,uv.getY(i)*sv);}
-  const m=new THREE.Mesh(geo,mats);m.position.set(x,h/2,z);scene.add(m);return m;
+  const m=new THREE.Mesh(geo,mats);m.position.set(x,h/2,z);(parent||scene).add(m);return m;
 }
 const FQ_ZONE=[650,1420,200,800], CENTRAL_ZONE=[-190,520,-230,230];
-const AIRPORT_ZONE=[-1500,1100,2290,2760];
-const noTree=[FQ_ZONE,CENTRAL_ZONE,SEA,BEACH,[-200,520,1120,1280]].concat(AIRLINK?[AIRPORT_ZONE]:[DOCKWATER,QUAY,[400,950,1960,2140]]);
+const AIRPORT_ZONE=[-1500,1100,2930,3400];
+const noTree=[FQ_ZONE,CENTRAL_ZONE,SEA,BEACH,[-200,520,1120,1280],AIRPORT_ZONE,DOCKWATER,QUAY,[400,950,1960,2140]];
 // Financial quarter towers
 for(let x=FQ_ZONE[0];x<FQ_ZONE[1];x+=48)for(let z=FQ_ZONE[2];z<FQ_ZONE[3];z+=48){
   const px=x+rr(-8,8),pz=z+rr(-8,8),w=rr(24,36),d=rr(24,36);
@@ -459,8 +471,8 @@ for(let x=CENTRAL_ZONE[0];x<CENTRAL_ZONE[1];x+=34)for(let z=CENTRAL_ZONE[2];z<CE
   const lamp=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,3,12),new THREE.MeshBasicMaterial({color:0xfff3b0}));lamp.position.set(-150,29.5,985);scene.add(lamp);
   const cap=new THREE.Mesh(new THREE.ConeGeometry(3,3,12),lam(0x333a3f));cap.position.set(-150,32.5,985);scene.add(cap);
 }
-// Trent Docks: containers, warehouses, cranes, ship (Aqua line only)
-if(!AIRLINK){
+// Trent Docks: containers, warehouses, cranes, ship
+{
   const cols=[0xc0392b,0x2c6fbb,0xe0a21b,0x2e8b57,0x8e44ad,0xdadada,0xd35400,0x16a085];
   const mats=cols.map(c=>lam(c));
   for(let row=0;row<7;row++)for(let x=430;x<880;x+=13.5){
@@ -482,7 +494,7 @@ if(!AIRLINK){
   for(let x=545;x<760;x+=13.5)for(let h=0;h<3;h++)for(const dz of [-9,-4,1,6,11])if(rnd()<0.85)box(12,2.6,2.5,mats[Math.floor(rnd()*mats.length)],x,10.2+h*2.6,2165+dz-1,scene);
   box(18,22,24,lam(0xf2f2f2),740,19,2170,scene);
 }
-/* ---- Airlink only: Lars Crossing + the airport ---- */
+/* ---- Airlink scenery: Lars Crossing + the airport (south of the docks) ---- */
 const PLANES=[];let flyer=null;
 function makePlane(tailCol){
   const g=new THREE.Group(),body=lam(0xf3f4f6),cm=lam(tailCol),grey=lam(0x8a9096);
@@ -497,19 +509,19 @@ function makePlane(tailCol){
   box(0.5,0.5,0.5,new THREE.MeshBasicMaterial({color:0xff2a2a}),0,5.9,0,g);   // beacon
   return g;
 }
-if(AIRLINK){
+{
   const asphalt=lam(0x3b3d42),white=new THREE.MeshBasicMaterial({color:0xf2f2f2}),tarmac=lam(0x8f9296);
   const glass=new THREE.MeshLambertMaterial({color:0x7fb2cf,emissive:0x3a5f78,emissiveIntensity:0});ENV_WIN.push(glass);
-  const roofW=lam(0xf0f2f4);
+  const roofW=lam(0xf0f2f4),AL=OUT.airlink,ST=name=>AL.stops.find(x=>x.name===name);
   // --- Lars Crossing: village + a road crossing the line just beyond the station
   {
-    const st=STATIONS.find(x=>x.name==='Lars Crossing'),p=at(st.s+130);
+    const st=ST('Lars Crossing'),p=AL.at(st.s+130);
     const g=new THREE.Group();g.position.set(p.x,0,p.z);g.rotation.y=Math.atan2(p.tx,p.tz);scene.add(g);
     box(150,0.26,8,asphalt,0,0.12,0,g);
     for(let x=-70;x<=70;x+=10)box(4,0.275,0.25,white,x,0.125,0,g);
     const red=new THREE.MeshBasicMaterial({color:0xff2a1a});
     for(const sx of [-1,1])for(const sz of [-1,1]){
-      box(0.2,3.2,0.2,matPostG(),sx*4.2,1.6,sz*5.4,g);
+      box(0.2,3.2,0.2,matPost,sx*4.2,1.6,sz*5.4,g);
       box(0.5,0.5,0.2,red,sx*4.2,3.0,sz*5.4,g);
       const arm=box(0.14,0.14,4.4,lam(sx>0?0xf2f2f2:0xc0281e),sx*4.2,3.4,sz*5.4+0,g);arm.rotation.x=-0.9*sz;
     }
@@ -522,47 +534,45 @@ if(AIRLINK){
       const r=new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.72,3,4),roof);r.position.set(px,h+1.5,pz);r.rotation.y=Math.PI/4;scene.add(r);
     }
   }
-  // --- airport: apron, runway, terminals, tower, hangars, planes
-  flatRect([-1000,800,2292,2580],-0.12,tarmac);
-  flatRect([-1500,1100,2625,2675],-0.1,asphalt);
-  flatRect([-300,-262,2575,2630],-0.11,asphalt);flatRect([430,468,2575,2630],-0.11,asphalt);
-  for(let x=-1450;x<=1050;x+=60)box(30,0.02,1.2,white,x,-0.06,2650);
+  // --- airport: everything below is built around z=2260 then moved south (AZ) to sit beside the Airlink track
+  const AZ=640,AP=new THREE.Group();AP.position.z=AZ;scene.add(AP);
+  flatRect([-1000,800,2292,2580],-0.12,tarmac,AP);
+  flatRect([-1500,1100,2625,2675],-0.1,asphalt,AP);
+  flatRect([-300,-262,2575,2630],-0.11,asphalt,AP);flatRect([430,468,2575,2630],-0.11,asphalt,AP);
+  for(let x=-1450;x<=1050;x+=60)box(30,0.02,1.2,white,x,-0.06,2650,AP);
   {
     const li=new THREE.InstancedMesh(new THREE.BoxGeometry(0.6,0.5,0.6),new THREE.MeshBasicMaterial({color:0xfff3c4}),132),d=new THREE.Object3D();let n=0;
     for(let x=-1480;x<=1080;x+=40)for(const z of [2627,2673]){d.position.set(x,0.05,z);d.updateMatrix();li.setMatrixAt(n++,d.matrix);}
-    li.count=n;scene.add(li);
+    li.count=n;AP.add(li);
   }
-  const stationX=(name)=>STATIONS.find(s=>s.name===name);
   // Airport Plaza: hotel + offices + car park
   {
-    const x0=Px[stationX('Airport Plaza').s];
-    addBuilding(x0-110,2315,30,30,52,BMATS[3]);addBuilding(x0-40,2325,34,28,36,BMATS[1]);addBuilding(x0+40,2315,26,26,68,BMATS[0]);addBuilding(x0+110,2320,30,30,42,BMATS[4]);
-    box(150,10,56,lam(0x9a9fa4),x0,5,2400,scene);box(152,0.8,58,lam(0x6d7378),x0,10.4,2400,scene);
+    const x0=ST('Airport Plaza').wp[0];
+    addBuilding(x0-110,2315,30,30,52,BMATS[3],AP);addBuilding(x0-40,2325,34,28,36,BMATS[1],AP);addBuilding(x0+40,2315,26,26,68,BMATS[0],AP);addBuilding(x0+110,2320,30,30,42,BMATS[4],AP);
+    box(150,10,56,lam(0x9a9fa4),x0,5,2400,AP);box(152,0.8,58,lam(0x6d7378),x0,10.4,2400,AP);
   }
   // Terminals
-  for(const [name,x0,accent] of [['Terminal 1',null,0x1d6fd1],['Terminal 2',null,0xf5821f]]){
-    const xc=Px[stationX(name).s],acc=lam(accent);
-    box(210,18,56,glass,xc,9,2332,scene);box(214,1.6,60,roofW,xc,18.8,2332,scene);box(214,1,5,acc,xc,17,2303,scene);
-    box(26,12,170,glass,xc,6,2447,scene);box(28,1.2,172,roofW,xc,12.6,2447,scene);
+  for(const [name,accent] of [['Terminal 1',0x1d6fd1],['Terminal 2',0xf5821f]]){
+    const xc=ST(name).wp[0],acc=lam(accent);
+    box(210,18,56,glass,xc,9,2332,AP);box(214,1.6,60,roofW,xc,18.8,2332,AP);box(214,1,5,acc,xc,17,2303,AP);
+    box(26,12,170,glass,xc,6,2447,AP);box(28,1.2,172,roofW,xc,12.6,2447,AP);
     const sg=new THREE.Mesh(new THREE.PlaneGeometry(30,6),new THREE.MeshBasicMaterial({map:labelTex(name.toUpperCase(),'#'+accent.toString(16).padStart(6,'0'),'#ffffff',1024,200)}));
-    sg.position.set(xc,12,2302.8);sg.rotation.y=Math.PI;scene.add(sg);
-    // parked planes nosed in to the pier
+    sg.position.set(xc,12,2302.8);sg.rotation.y=Math.PI;AP.add(sg);
     const tails=[0xd9232e,0x1d6fd1,0x2e9d57,0xf0b323,0x7a3fb5,0xf5821f];
     let ti=Math.floor(rnd()*6);
     for(const [dx,dz] of [[-34,2405],[34,2405],[-34,2470],[34,2470],[-34,2535],[34,2535]]){
       if(dz>2500&&rnd()<0.35)continue;
-      const pl=makePlane(tails[ti++%6]);pl.position.set(xc+dx,0,dz);pl.rotation.y=Math.PI+(dx<0?0.25:-0.25)*0;scene.add(pl);PLANES.push(pl);
+      const pl=makePlane(tails[ti++%6]);pl.position.set(xc+dx,0,dz);pl.rotation.y=Math.PI;AP.add(pl);PLANES.push(pl);
     }
   }
   // control tower + hangars
-  box(9,46,9,lam(0xd5d8dc),-230,23,2470,scene);
-  const cab=new THREE.Mesh(new THREE.CylinderGeometry(11,8,8,16),glass);cab.position.set(-230,50,2470);scene.add(cab);
-  box(24,1.2,24,lam(0x444a50),-230,54.8,2470,scene);
-  for(const x of [-900,-800,-700])box(80,16,50,lam(0x8e9aa6),x,8,2420,scene);
+  box(9,46,9,lam(0xd5d8dc),-230,23,2470,AP);
+  const cab=new THREE.Mesh(new THREE.CylinderGeometry(11,8,8,16),glass);cab.position.set(-230,50,2470);AP.add(cab);
+  box(24,1.2,24,lam(0x444a50),-230,54.8,2470,AP);
+  for(const x of [-900,-800,-700])box(80,16,50,lam(0x8e9aa6),x,8,2420,AP);
   // plane that takes off every so often
-  flyer=makePlane(0x2a5db0);flyer.scale.setScalar(1.15);flyer.rotation.order='YXZ';scene.add(flyer);
+  flyer=makePlane(0x2a5db0);flyer.scale.setScalar(1.15);flyer.rotation.order='YXZ';AP.add(flyer);
 }
-function matPostG(){return matPost;}
 function updateFlyer(){
   if(!flyer)return;
   const t=(performance.now()/1000)%80;
@@ -579,8 +589,8 @@ function updateFlyer(){
   const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),4500);
   const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),4500);
   const d=new THREE.Object3D();let a=0,b=0;
-  for(let i=0;i<14000&&a+b<4500;i++){
-    const x=rr(-1800,1550),z=rr(-550,2900);
+  for(let i=0;i<18000&&a+b<4500;i++){
+    const x=rr(-1800,1550),z=rr(-550,3500);
     if(nearTrack(x,z,14))continue;
     let bad=false;for(const r of noTree)if(inRect(x,z,r)){bad=true;break;}if(bad)continue;
     const s=rr(0.8,1.5);
@@ -902,7 +912,7 @@ addEventListener('resize',resize);resize();
 {
   const ends=LINE.stops.map(x=>x.name),a=ends[0],z=ends[ends.length-1];
   $('title').innerHTML=LINE.first+' <span>'+LINE.second+'</span>';
-  $('intro').innerHTML='Drive '+LINE.name+': '+STATIONS.map(x=>'<b>'+x.name+'</b>').join(' &rarr; ')+'.'+(PASS.length?' It runs through '+PASS.map(x=>x.name).join(', ')+' without stopping.':'')+' There are no speed limits. Stop with the front of the train at the red STOP board.';
+  $('intro').innerHTML='Drive '+LINE.name+': '+STATIONS.map(x=>'<b>'+x.name+'</b>').join(' &rarr; ')+'.'+(AIRLINK?' It runs through Financial Quarter without stopping.':'')+' There are no speed limits. Stop with the front of the train at the red STOP board.';
   $('selRoute').innerHTML='<option value="out">'+a+' &rarr; '+z+'</option><option value="return">'+z+' &rarr; '+a+'</option>';
   $('selLine').value=CFG.line;
   $('selLine').onchange=e=>{CFG.line=e.target.value;syncURL();location.reload();};
