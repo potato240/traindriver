@@ -391,7 +391,7 @@ flatRect(DOCKWATER,-0.05,lam(0x2a5d7e));flatRect(QUAY,-0.12,lam(0x8d9296));
 /* ---- track: each line has its own track (the Metro is a street-running tram on a road) ---- */
 const railMat=lam(0xa9acb0),sleeperMat=lam(0x6b5a4a),mastMat=lam(0x5a6168);
 const ballastMat=new THREE.MeshLambertMaterial({color:0x8a8780,side:THREE.DoubleSide});
-const roadMat=new THREE.MeshLambertMaterial({color:0x44464b,side:THREE.DoubleSide});
+const roadMat=new THREE.MeshLambertMaterial({color:0xaaa79e,side:THREE.DoubleSide});   // pale concrete track bed
 const pavementMat=new THREE.MeshLambertMaterial({color:0xb9b6ae,side:THREE.DoubleSide});
 function buildTrack(P){
   const {Px,Pz,L,at}=P,dummy=new THREE.Object3D(),tram=!!LINES[P.id].tram;
@@ -424,7 +424,7 @@ function buildTrack(P){
     const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
     scene.add(new THREE.Mesh(bg,mat));
   };
-  if(tram){strip(-4.6,4.6,0.08,roadMat);strip(-6.6,-4.6,0.13,pavementMat);strip(4.6,6.6,0.13,pavementMat);}
+  if(tram){strip(-2.1,2.1,0.08,roadMat);}
   else strip(-1.95,1.95,0.1,ballastMat);
   // overhead masts on the side away from the platforms (skipped inside the Central trainshed) + the wire
   const spacing=tram?35:50,count=Math.floor(L/spacing),masts=new THREE.InstancedMesh(new THREE.BoxGeometry(0.28,tram?6.2:6.6,0.28),mastMat,count+1),wire=[];
