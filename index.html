@@ -1,1 +1,581 @@
-hello world
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sebford Aqua - Train Driver</title>
+<style>
+  :root{--aqua:#00b4c0;--ink:#0b1c24;--panel:rgba(8,24,32,.78);--warn:#ff5a4d;--ok:#5be3a0}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#cfe6f5;font-family:system-ui,Segoe UI,Roboto,sans-serif;color:#fff}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  .panel{background:var(--panel);border:1px solid rgba(255,255,255,.12);border-radius:10px;backdrop-filter:blur(4px)}
+  #routebar{position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(620px,56vw);height:50px;padding:0 24px}
+  #routebar .line{position:absolute;left:24px;right:24px;top:20px;height:4px;background:var(--aqua);border-radius:2px;opacity:.9}
+  .stop{position:absolute;top:13px;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:#fff;border:4px solid var(--aqua)}
+  .stop.done{background:var(--aqua)}
+  .stop span{position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:11px;white-space:nowrap;opacity:.9}
+  #dot{position:absolute;top:10px;width:0;height:0;margin-left:-7px;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid #ffd23f}
+  #next{position:fixed;top:12px;left:12px;padding:10px 14px;min-width:210px}
+  #next small,#stats small{display:block;opacity:.65;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  #next b{font-size:19px}
+  #nextdist{font-size:26px;font-weight:700;color:var(--aqua)}
+  #stats{position:fixed;top:12px;right:12px;padding:10px 14px;text-align:right;min-width:130px}
+  #stats b{font-size:22px}
+  #hud{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;align-items:flex-end;gap:22px;padding:0 0 14px;pointer-events:none}
+  #speedo{width:170px;height:130px;text-align:center;padding-top:14px}
+  #spd{font-size:64px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+  #spd.over{color:var(--warn)}
+  #speedo small{opacity:.7;letter-spacing:.12em}
+  #limit{width:86px;height:86px;border-radius:50%;background:#fff;border:9px solid #d6001c;color:#111;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:800;margin-bottom:8px}
+  #levers{display:flex;gap:16px;padding:12px 16px;height:130px;align-items:flex-end}
+  .lever{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;letter-spacing:.1em;opacity:.95}
+  .track{width:26px;height:84px;background:rgba(255,255,255,.12);border-radius:6px;position:relative;overflow:hidden}
+  .fill{position:absolute;left:0;right:0;bottom:0;height:0%}
+  #setfill{background:var(--ok)}
+  #setbox{text-align:center;align-self:center;min-width:64px}
+  #setspd{font-size:38px;font-weight:800;color:var(--ok);line-height:1;font-variant-numeric:tabular-nums}
+  #setbox small{opacity:.7;letter-spacing:.12em;font-size:11px}
+  #doors{width:120px;height:130px;padding:14px 8px;text-align:center}
+  #doors b{display:block;font-size:18px;margin:6px 0}
+  .dl{width:16px;height:16px;border-radius:50%;background:#555;margin:0 auto}
+  .dl.on{background:var(--ok);box-shadow:0 0 12px var(--ok)}
+  #msg{position:fixed;top:92px;left:50%;transform:translateX(-50%);padding:10px 20px;font-size:19px;font-weight:600;opacity:0;transition:opacity .25s;text-align:center;max-width:80vw}
+  #msg.show{opacity:1}
+  #msg.bad{border-color:var(--warn);color:#ffd5d0}
+  #msg.good{border-color:var(--ok)}
+  #ahead{position:fixed;top:150px;left:50%;transform:translateX(-50%);padding:6px 14px;font-size:15px;color:#ffd23f;display:none}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(6,20,28,.72);backdrop-filter:blur(3px);z-index:10}
+  .card{max-width:560px;padding:28px 34px;text-align:left}
+  .card h1{margin:0 0 4px;font-size:34px}
+  .card h1 span{color:var(--aqua)}
+  .card p{opacity:.85;line-height:1.5}
+  table{border-collapse:collapse;margin:10px 0 18px;width:100%}
+  td{padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.1);font-size:15px}
+  td:first-child{white-space:nowrap}
+  kbd{background:#20404c;border:1px solid #3a6676;border-radius:4px;padding:1px 7px;font-family:inherit;font-size:13px}
+  button{background:var(--aqua);color:#032026;border:0;border-radius:8px;padding:12px 26px;font-size:17px;font-weight:700;cursor:pointer}
+  #end{display:none}
+  .hidden{display:none!important}
+  @media(max-width:760px){#routebar{display:none}#next{min-width:0}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="routebar" class="panel"><div class="line"></div><div id="dot"></div></div>
+<div id="next" class="panel"><small>Next stop</small><b id="nextname">-</b><div id="nextdist">-</div></div>
+<div id="stats" class="panel"><small>Score</small><b id="score">0</b><small style="margin-top:6px">Time</small><b id="time">0:00</b></div>
+<div id="msg" class="panel"></div>
+<div id="ahead" class="panel"></div>
+
+<div id="hud">
+  <div id="doors" class="panel"><small style="opacity:.7;letter-spacing:.1em">DOORS</small><b id="doortxt">OPEN</b><div class="dl" id="doorlight"></div></div>
+  <div id="speedo" class="panel"><div id="spd">0</div><small>MPH</small></div>
+  <div id="levers" class="panel">
+    <div class="lever"><div class="track"><div class="fill" id="setfill"></div></div>SET SPEED</div>
+    <div id="setbox"><div id="setspd">0</div><small>MPH</small></div>
+  </div>
+</div>
+
+<div id="start" class="overlay">
+  <div class="card panel">
+    <h1>Sebford <span>Aqua</span></h1>
+    <p>Drive the Aqua line: <b>Sebford Central</b> &rarr; <b>Financial Quarter</b> &rarr; <b>Westercoast</b> &rarr; <b>Trent Docks</b>. There are no speed limits. Stop with the front of the train at the red STOP board.</p>
+    <table>
+      <tr><td><kbd>W</kbd> / <kbd>&uarr;</kbd></td><td>Raise the set speed - the train speeds up to it</td></tr>
+      <tr><td><kbd>S</kbd> / <kbd>&darr;</kbd></td><td>Lower the set speed - the train slows down to it</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Emergency stop</td></tr>
+      <tr><td><kbd>H</kbd></td><td>Horn</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Cab / chase camera</td></tr>
+      <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart</td></tr>
+    </table>
+    <button id="go">Start driving</button>
+  </div>
+</div>
+
+<div id="end" class="overlay">
+  <div class="card panel">
+    <h1 id="endtitle">Service complete</h1>
+    <p id="endbody"></p>
+    <table id="endtable"></table>
+    <button id="again">Drive again</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+/* ------------------------------------------------------------------ *
+ *  SEBFORD AQUA  -  route + helpers
+ * ------------------------------------------------------------------ */
+const MPH = 2.23694, BASE_LIMIT = 26.8;           // 60 mph
+const TRAIN_CARS = 4, CAR_LEN = 19, CAR_GAP = 1;
+const TRAIN_LEN = TRAIN_CARS * CAR_LEN + (TRAIN_CARS - 1) * CAR_GAP;
+const PLAT_HALF = 70;                              // platform half length
+const STOP_AHEAD = 60;                             // stop board is 60 m past station centre
+
+const WAYPOINTS = [
+  [-150,0],[-75,0],[0,0],[75,0],[150,0],[300,0],[500,0],[700,20],[880,90],[980,230],
+  [1010,400],[1010,500],[1010,600],[1010,700],[1000,850],[930,1000],[780,1090],[600,1110],
+  [450,1110],[350,1110],[250,1110],[150,1110],[0,1120],[-150,1200],[-250,1350],[-280,1500],
+  [-230,1650],[-100,1780],[100,1850],[150,1870],[300,1990],[450,2050],[550,2050],[650,2050],
+  [750,2050],[830,2050]
+];
+const STATIONS = [
+  { name:'Sebford Central',   wp:[0,0] },
+  { name:'Financial Quarter', wp:[1010,500] },
+  { name:'Westercoast',       wp:[350,1110] },
+  { name:'Trent Docks',       wp:[650,2050] }
+];
+
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rnd = mulberry32(20240607);
+const rr = (a,b)=>a+(b-a)*rnd();
+
+/* ---- build centre line, resampled to exactly 1 m spacing ---- */
+const curve = new THREE.CatmullRomCurve3(WAYPOINTS.map(p=>new THREE.Vector3(p[0],0,p[1])),false,'centripetal');
+const dense = curve.getPoints(WAYPOINTS.length*1000);
+const Px=[], Pz=[];
+{
+  Px.push(dense[0].x); Pz.push(dense[0].z);
+  let acc=0,next=1;
+  for(let i=1;i<dense.length;i++){
+    const a=dense[i-1],b=dense[i],seg=Math.hypot(b.x-a.x,b.z-a.z);
+    while(acc+seg>=next){const t=(next-acc)/seg;Px.push(a.x+(b.x-a.x)*t);Pz.push(a.z+(b.z-a.z)*t);next++;}
+    acc+=seg;
+  }
+}
+const L = Px.length-1;
+const Tx=new Float32Array(L+1), Tz=new Float32Array(L+1), YAW=new Float32Array(L+1);
+for(let i=0;i<=L;i++){
+  const a=Math.max(0,i-1),b=Math.min(L,i+1);
+  let dx=Px[b]-Px[a],dz=Pz[b]-Pz[a];const m=Math.hypot(dx,dz)||1;
+  Tx[i]=dx/m;Tz[i]=dz/m;YAW[i]=Math.atan2(Tx[i],Tz[i]);
+}
+function at(s){
+  s=clamp(s,0,L-0.001);const i=Math.floor(s),f=s-i;
+  let tx=Tx[i]+(Tx[i+1]-Tx[i])*f,tz=Tz[i]+(Tz[i+1]-Tz[i])*f;const m=Math.hypot(tx,tz)||1;
+  return {x:Px[i]+(Px[i+1]-Px[i])*f,z:Pz[i]+(Pz[i+1]-Pz[i])*f,tx:tx/m,tz:tz/m};
+}
+
+/* ---- stations: index along the line + stop board position ---- */
+STATIONS.forEach(st=>{
+  let best=1e18,bi=0;
+  for(let i=0;i<=L;i++){const d=(Px[i]-st.wp[0])**2+(Pz[i]-st.wp[1])**2;if(d<best){best=d;bi=i;}}
+  st.s=bi; st.target=bi+STOP_AHEAD;
+});
+
+
+/* ---- spatial hash of the track so scenery stays clear of it ---- */
+const CELL=25,grid=new Map();
+for(let i=0;i<=L;i+=4){const key=Math.floor(Px[i]/CELL)+','+Math.floor(Pz[i]/CELL);(grid.get(key)||grid.set(key,[]).get(key)).push(i);}
+function nearTrack(x,z,r){
+  const cx=Math.floor(x/CELL),cz=Math.floor(z/CELL),n=Math.ceil(r/CELL);
+  for(let a=-n;a<=n;a++)for(let b=-n;b<=n;b++){
+    const arr=grid.get((cx+a)+','+(cz+b));if(!arr)continue;
+    for(const i of arr) if((Px[i]-x)**2+(Pz[i]-z)**2<r*r) return true;
+  }
+  return false;
+}
+const inRect=(x,z,r)=>x>=r[0]&&x<=r[1]&&z>=r[2]&&z<=r[3];
+
+/* ------------------------------------------------------------------ *
+ *  THREE.js scene
+ * ------------------------------------------------------------------ */
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true,logarithmicDepthBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0xcfe6f5);
+scene.fog=new THREE.Fog(0xcfe6f5,350,2300);
+const camera=new THREE.PerspectiveCamera(62,1,0.3,3600);
+scene.add(new THREE.HemisphereLight(0xe3f1ff,0x6f8f55,0.95));
+const sun=new THREE.DirectionalLight(0xfff0d0,0.9);sun.position.set(400,600,250);scene.add(sun);
+
+const lam=(c,o)=>new THREE.MeshLambertMaterial(Object.assign({color:c},o||{}));
+function box(w,h,d,mat,x,y,z,parent){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);(parent||scene).add(m);return m;}
+
+/* sky dome */
+{
+  const c=document.createElement('canvas');c.width=4;c.height=256;const g=c.getContext('2d');
+  const gr=g.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#3f86c9');gr.addColorStop(.55,'#9cc9ec');gr.addColorStop(1,'#cfe6f5');
+  g.fillStyle=gr;g.fillRect(0,0,4,256);
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(3000,24,16),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),side:THREE.BackSide,fog:false,depthWrite:false}));
+  dome.name='dome';scene.add(dome);
+}
+/* ground, sea, beach */
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(6000,6000),lam(0x7db35c));ground.rotation.x=-Math.PI/2;ground.position.set(400,-0.3,1000);scene.add(ground);
+const SEA=[-800,450,550,1040], BEACH=[-800,470,1040,1078], DOCKWATER=[350,1100,2140,2700], QUAY=[400,900,2092,2142];
+function flatRect(r,y,mat){const m=new THREE.Mesh(new THREE.PlaneGeometry(r[1]-r[0],r[3]-r[2]),mat);m.rotation.x=-Math.PI/2;m.position.set((r[0]+r[1])/2,y,(r[2]+r[3])/2);scene.add(m);return m;}
+flatRect(SEA,-0.05,lam(0x2f86c4));
+flatRect(BEACH,-0.15,lam(0xe6d6a2));
+flatRect(DOCKWATER,-0.05,lam(0x2a5d7e));
+flatRect(QUAY,-0.12,lam(0x8d9296));
+
+/* ---- track ---- */
+{
+  const dummy=new THREE.Object3D();
+  const rails=new THREE.InstancedMesh(new THREE.BoxGeometry(0.09,0.17,1),lam(0xa9acb0),L*2);
+  let n=0;
+  for(let i=0;i<L;i++){
+    const dx=Px[i+1]-Px[i],dz=Pz[i+1]-Pz[i],len=Math.hypot(dx,dz),rx=-dz/len,rz=dx/len;
+    for(const sd of [-0.7175,0.7175]){
+      dummy.position.set((Px[i]+Px[i+1])/2+rx*sd,0.285,(Pz[i]+Pz[i+1])/2+rz*sd);
+      dummy.rotation.set(0,Math.atan2(dx,dz),0);dummy.scale.set(1,1,len*1.03);dummy.updateMatrix();rails.setMatrixAt(n++,dummy.matrix);
+    }
+  }
+  scene.add(rails);
+  const sc=Math.floor(L/0.72),sleepers=new THREE.InstancedMesh(new THREE.BoxGeometry(2.6,0.15,0.28),lam(0x6b5a4a),sc);
+  for(let i=0;i<sc;i++){
+    const p=at(i*0.72);dummy.position.set(p.x,0.125,p.z);dummy.rotation.set(0,Math.atan2(p.tx,p.tz),0);dummy.scale.set(1,1,1);dummy.updateMatrix();sleepers.setMatrixAt(i,dummy.matrix);
+  }
+  scene.add(sleepers);
+  // ballast ribbon
+  const pos=[],idx=[];let v=0;
+  for(let s=0;s<=L-2;s+=2){
+    const p=at(s),rx=-p.tz,rz=p.tx;
+    pos.push(p.x-rx*1.95,0.1,p.z-rz*1.95, p.x+rx*1.95,0.1,p.z+rz*1.95);
+    if(v>0){idx.push(v-2,v-1,v,v-1,v+1,v);}
+    v+=2;
+  }
+  const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
+  scene.add(new THREE.Mesh(bg,new THREE.MeshLambertMaterial({color:0x8a8780,side:THREE.DoubleSide})));
+}
+/* overhead masts + wire (skipped inside Central trainshed) */
+{
+  const dummy=new THREE.Object3D(),count=Math.floor(L/50),masts=new THREE.InstancedMesh(new THREE.BoxGeometry(0.28,6.6,0.28),lam(0x5a6168),count+1);
+  let n=0;const wire=[];
+  for(let k=0;k<=count;k++){
+    const s=k*50+10,p=at(s);
+    if(s>STATIONS[0].s-160&&s<STATIONS[0].s+80)continue;
+    const lx=p.tz,lz=-p.tx; // left of travel
+    dummy.position.set(p.x+lx*2.9,3.3,p.z+lz*2.9);dummy.rotation.set(0,0,0);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
+  }
+  masts.count=n;scene.add(masts);
+  for(let s=STATIONS[0].s+80;s<L-1;s+=5){const a=at(s),b=at(s+5);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
+  const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
+  scene.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0x2d3338})));
+}
+
+/* ---- canvas label textures ---- */
+function labelTex(text,bg,fg,w,h){
+  const c=document.createElement('canvas');c.width=w||512;c.height=h||128;const g=c.getContext('2d');
+  g.fillStyle=bg;g.fillRect(0,0,c.width,c.height);g.fillStyle='#fff';g.fillRect(0,c.height-14,c.width,14);
+  g.fillStyle=fg;g.textAlign='center';g.textBaseline='middle';
+  let size=64;g.font='bold '+size+'px system-ui,sans-serif';
+  while(g.measureText(text).width>c.width-40&&size>16){size-=4;g.font='bold '+size+'px system-ui,sans-serif';}
+  g.fillText(text,c.width/2,c.height/2-4);
+  const t=new THREE.CanvasTexture(c);t.anisotropy=4;return t;
+}
+
+/* ---- stations ---- */
+const matPlat=lam(0xbcbcb8),matRoof=lam(0x2f4858),matPost=lam(0x57656d),matYellow=lam(0xf2c500);
+STATIONS.forEach((st,k)=>{
+  const g=new THREE.Group();g.position.set(Px[st.s],0,Pz[st.s]);g.rotation.y=YAW[st.s];scene.add(g);
+  // local +z = direction of travel, -x = right (platform side)
+  box(6,1.0,PLAT_HALF*2,matPlat,-4.7,0.5,0,g);
+  box(0.3,0.02,PLAT_HALF*2,matYellow,-2.0,1.01,0,g);
+  box(7.8,0.25,92,matRoof,-5.0,4.8,0,g);
+  for(let z=-45;z<=45;z+=15) box(0.3,4.8,0.3,matPost,-7.4,2.4,z,g);
+  const nameTex=labelTex(st.name,'#00a9b5','#ffffff');
+  for(const z of [-38,0,38]){
+    const sign=new THREE.Mesh(new THREE.PlaneGeometry(6,1.5),new THREE.MeshBasicMaterial({map:nameTex}));
+    sign.position.set(-7.1,2.9,z);sign.rotation.y=Math.PI/2;g.add(sign);
+  }
+  // stop board
+  const stopTex=labelTex('STOP  4 CAR','#c8102e','#ffffff',256,96);
+  box(0.15,2.4,0.15,matPost,-3.1,2.2,STOP_AHEAD+2,g);
+  const sb=new THREE.Mesh(new THREE.PlaneGeometry(2.4,0.9),new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}));
+  sb.position.set(-3.1,2.9,STOP_AHEAD+2);sb.rotation.y=Math.PI;g.add(sb);
+  // station building behind platform
+  box(10,5,34,lam(k===0?0xb5a58a:0xc9b79a),-13.5,2.5,-8,g);
+  box(10.6,0.5,34.6,lam(0x6a4a3a),-13.5,5.2,-8,g);
+  if(k===0){ // Sebford Central trainshed + terminus wall + buffers
+    box(16,0.5,236,lam(0x37505e),0,7.2,-32,g);
+    for(let z=-146;z<=82;z+=19){box(0.4,7.2,0.4,matPost,-7.6,3.6,z,g);box(0.4,7.2,0.4,matPost,7.6,3.6,z,g);}
+    box(26,16,3,lam(0x8c7a62),0,8,-153,g);
+    box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,-148.5,g);
+    box(1.2,0.3,0.9,lam(0x222222),0,1.5,-148.5,g);
+    // opposite platform
+    box(6,1.0,170,matPlat,4.7,0.5,-60,g);
+  }
+});
+/* terminus end of line buffers at Trent Docks */
+{ const p=at(L-1),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
+  box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,1,b);box(0.3,1.6,0.3,matPost,-1.2,0.8,1.6,b);box(0.3,1.6,0.3,matPost,1.2,0.8,1.6,b); }
+
+/* ---- buildings ---- */
+function winTex(tint){
+  const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+  g.fillStyle=tint;g.fillRect(0,0,128,128);
+  for(let r=0;r<4;r++)for(let q=0;q<4;q++){g.fillStyle=rnd()<0.3?'#ffe9a8':'#3a566f';g.fillRect(q*32+6,r*32+7,20,17);}
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=4;return t;
+}
+const TINTS=['#c9d3da','#aebdc7','#d9d2c2','#9fb3c4','#bfc7cf'];
+const BMATS=TINTS.map(t=>{const w=new THREE.MeshLambertMaterial({map:winTex(t)}),r=lam(0x7d858b);return [w,w,r,r,w,w];});
+function addBuilding(x,z,w,d,h,mats){
+  const geo=new THREE.BoxGeometry(w,h,d),uv=geo.attributes.uv;
+  for(let i=0;i<24;i++){let su=1,sv=1;if(i<8){su=d/16;sv=h/16;}else if(i>=16){su=w/16;sv=h/16;}uv.setXY(i,uv.getX(i)*su,uv.getY(i)*sv);}
+  const m=new THREE.Mesh(geo,mats);m.position.set(x,h/2,z);scene.add(m);return m;
+}
+const FQ_ZONE=[650,1420,200,800], CENTRAL_ZONE=[-190,520,-230,230];
+const noTree=[FQ_ZONE,CENTRAL_ZONE,SEA,BEACH,DOCKWATER,QUAY,[400,950,1960,2140],[-200,520,1120,1280]];
+// Financial quarter towers
+for(let x=FQ_ZONE[0];x<FQ_ZONE[1];x+=48)for(let z=FQ_ZONE[2];z<FQ_ZONE[3];z+=48){
+  const px=x+rr(-8,8),pz=z+rr(-8,8),w=rr(24,36),d=rr(24,36);
+  if(nearTrack(px,pz,Math.max(w,d)*0.75+16))continue;
+  const dc=Math.hypot(px-1010,pz-500),h=18+rnd()*35+Math.max(0,150-dc*0.28)*rnd()*1.1;
+  addBuilding(px,pz,w,d,h,BMATS[Math.floor(rnd()*BMATS.length)]);
+}
+// Sebford Central town (low/mid rise)
+for(let x=CENTRAL_ZONE[0];x<CENTRAL_ZONE[1];x+=34)for(let z=CENTRAL_ZONE[2];z<CENTRAL_ZONE[3];z+=34){
+  const px=x+rr(-5,5),pz=z+rr(-5,5),w=rr(16,26),d=rr(16,26);
+  if(nearTrack(px,pz,Math.max(w,d)*0.75+22))continue;
+  if(px<-150&&Math.abs(pz)<60)continue;
+  addBuilding(px,pz,w,d,rr(10,42),BMATS[Math.floor(rnd()*BMATS.length)]);
+}
+// Westercoast seafront houses
+{
+  const roof=lam(0xb5452f),wall=[lam(0xf1ead8),lam(0xe8c7a1),lam(0xcfe0e6),lam(0xf0d9d4)];
+  for(let x=-150;x<520;x+=24)for(let z=1140;z<1270;z+=24){
+    const px=x+rr(-4,4),pz=z+rr(-4,4);
+    if(nearTrack(px,pz,22))continue;
+    const w=rr(9,13),d=rr(8,11),h=rr(5,8);
+    box(w,h,d,wall[Math.floor(rnd()*4)],px,h/2,pz,scene);
+    const r=new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.72,3,4),roof);r.position.set(px,h+1.5,pz);r.rotation.y=Math.PI/4;scene.add(r);
+  }
+  // pier
+  box(4,0.5,205,lam(0x8a6a48),150,0.3,975,scene);box(10,4,10,lam(0xe9e4d6),150,2.3,868,scene);box(11,1,11,roof,150,4.6,868,scene);
+  // lighthouse
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(14,16,1.4,20),lam(0xe6d6a2));base.position.set(-150,0.1,985);scene.add(base);
+  for(let i=0;i<4;i++){const c=new THREE.Mesh(new THREE.CylinderGeometry(3.6-i*0.4,4-i*0.4,6,16),lam(i%2?0xd7e0e4:0xc8312a));c.position.set(-150,4+i*6,985);scene.add(c);}
+  const lamp=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,3,12),new THREE.MeshBasicMaterial({color:0xfff3b0}));lamp.position.set(-150,29.5,985);scene.add(lamp);
+  const cap=new THREE.Mesh(new THREE.ConeGeometry(3,3,12),lam(0x333a3f));cap.position.set(-150,32.5,985);scene.add(cap);
+}
+// Trent Docks: containers, warehouses, cranes, ship
+{
+  const cols=[0xc0392b,0x2c6fbb,0xe0a21b,0x2e8b57,0x8e44ad,0xdadada,0xd35400,0x16a085];
+  const mats=cols.map(c=>lam(c));
+  for(let row=0;row<7;row++)for(let x=430;x<880;x+=13.5){
+    if(rnd()<0.18)continue;const stack=1+Math.floor(rnd()*3),z=2099+row*5.8;
+    for(let h=0;h<stack;h++)box(12,2.6,2.5,mats[Math.floor(rnd()*mats.length)],x,1.3+h*2.6,z,scene);
+  }
+  const wh=lam(0x7e8fa0),whr=lam(0x4d5b68);
+  for(const [x,z,w,d] of [[520,2086,110,22],[690,1998,120,26],[840,2004,70,24],[500,1995,70,24]]){
+    if(nearTrack(x,z,Math.max(w,d)*0.5+14))continue;
+    box(w,11,d,wh,x,5.5,z,scene);box(w+1,1,d+1,whr,x,11.5,z,scene);
+  }
+  const cr=lam(0xd9442a),legs=lam(0x8a2a18);
+  for(const x of [520,690,820]){
+    for(const lx of [-8,8])for(const lz of [0,-14])box(1.3,34,1.3,legs,x+lx,17,2140+lz,scene);
+    box(18,2,16,cr,x,34,2133,scene);box(2.5,2.5,60,cr,x,37,2150,scene);box(1,24,1,legs,x,25,2172,scene);
+  }
+  const hull=lam(0x7a1f1f);
+  box(230,10,34,hull,650,3,2165,scene);box(230,1,34,lam(0x333333),650,8.5,2165,scene);
+  for(let x=545;x<760;x+=13.5)for(let h=0;h<3;h++)for(const dz of [-9,-4,1,6,11])if(rnd()<0.85)box(12,2.6,2.5,mats[Math.floor(rnd()*mats.length)],x,10.2+h*2.6,2165+dz-1,scene);
+  box(18,22,24,lam(0xf2f2f2),740,19,2170,scene);
+}
+/* ---- trees ---- */
+{
+  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),3000);
+  const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),3000);
+  const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),3000);
+  const d=new THREE.Object3D();let a=0,b=0;
+  for(let i=0;i<9000&&a+b<3000;i++){
+    const x=rr(-750,1550),z=rr(-550,2600);
+    if(nearTrack(x,z,14))continue;
+    let bad=false;for(const r of noTree)if(inRect(x,z,r)){bad=true;break;}if(bad)continue;
+    const s=rr(0.8,1.5);
+    d.position.set(x,1.5*s,z);d.scale.set(s,s,s);d.updateMatrix();trunk.setMatrixAt(a+b,d.matrix);
+    d.position.set(x,(3+3.4)*s,z);d.updateMatrix();
+    if(rnd()<0.5)leaf.setMatrixAt(a++,d.matrix);else leaf2.setMatrixAt(b++,d.matrix);
+  }
+  const total=a+b;trunk.count=total;leaf.count=a;leaf2.count=b;scene.add(trunk,leaf,leaf2);
+  // matrices for trunk were written with index a+b at time of placement -> consistent with total
+}
+
+/* ---- the train ---- */
+const train=new THREE.Group();scene.add(train);
+const cars=[];
+{
+  const white=lam(0xf4f6f7),aqua=lam(0x00b4c0),glass=lam(0x1b2a33),roof=lam(0x9aa3a8),dark=lam(0x25292c);
+  for(let c=0;c<TRAIN_CARS;c++){
+    const g=new THREE.Group();
+    box(2.8,3.0,CAR_LEN,white,0,2.2,0,g);
+    box(2.84,0.9,CAR_LEN+0.02,aqua,0,1.35,0,g);
+    box(2.84,1.0,CAR_LEN-3,glass,0,2.85,0,g);
+    box(2.5,0.3,CAR_LEN-1,roof,0,3.85,0,g);
+    box(2.4,0.6,3,dark,0,0.55,6,g);box(2.4,0.6,3,dark,0,0.55,-6,g);
+    if(c===0){box(2.5,1.3,0.06,glass,0,2.9,CAR_LEN/2+0.01,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xfff6c8}),-0.9,1.5,CAR_LEN/2+0.02,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xfff6c8}),0.9,1.5,CAR_LEN/2+0.02,g);}
+    if(c===TRAIN_CARS-1){box(2.5,1.3,0.06,glass,0,2.9,-CAR_LEN/2-0.01,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xc4251c}),-0.9,1.5,-CAR_LEN/2-0.02,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xc4251c}),0.9,1.5,-CAR_LEN/2-0.02,g);}
+    train.add(g);cars.push(g);
+  }
+}
+function placeTrain(s){
+  for(let c=0;c<TRAIN_CARS;c++){
+    const sc=s-CAR_LEN/2-c*(CAR_LEN+CAR_GAP);
+    const a=at(sc+6),b=at(sc-6);
+    cars[c].position.set((a.x+b.x)/2,0,(a.z+b.z)/2);
+    cars[c].rotation.y=Math.atan2(a.x-b.x,a.z-b.z);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Game state
+ * ------------------------------------------------------------------ */
+const $=id=>document.getElementById(id);
+const keys={};
+let started=false,paused=false,camMode='cab';
+const MAX_SET=31.3, SET_RATE=2.5;   // 70 mph max set speed; W/S change it by ~5.6 mph per second held
+let s,v,setSpeed,phase,dwell,next,score,elapsed,ended,stopsLog,msgTimer=0;
+
+function resetGame(){
+  s=STATIONS[0].target;v=0;setSpeed=0;phase='dwell';dwell=5;next=1;score=0;elapsed=0;ended=false;stopsLog=[];
+  $('end').style.display='none';
+  STATIONS.forEach((st,i)=>{const e=$('st'+i);if(e)e.classList.toggle('done',i===0);});
+  showMsg('Welcome aboard. Doors are open at Sebford Central.','',4500);
+}
+// route bar
+{
+  const rb=$('routebar'),w=()=>rb.clientWidth-48;
+  STATIONS.forEach((st,i)=>{const e=document.createElement('div');e.className='stop';e.id='st'+i;e.style.left=(24+st.s/L*100*w()/100)+'px';e.innerHTML='<span>'+st.name+'</span>';e.dataset.f=st.s/L;rb.appendChild(e);});
+  rb.querySelectorAll('.stop').forEach(e=>e.style.left='calc(24px + (100% - 48px) * '+e.dataset.f+')');
+}
+function showMsg(t,kind,ms){
+  const m=$('msg');m.textContent=t;m.className='panel show '+(kind||'');msgTimer=(ms||3000)/1000;
+}
+function fmtTime(t){t=Math.floor(t);return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
+
+/* ---- audio ---- */
+let actx,noiseGain,noiseFilter,hornGain;
+function initAudio(){
+  try{
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+    const buf=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate),d=buf.getChannelData(0);let last=0;
+    for(let i=0;i<d.length;i++){last=(last+0.02*(Math.random()*2-1))/1.02;d[i]=last*3.5;}
+    const src=actx.createBufferSource();src.buffer=buf;src.loop=true;
+    noiseFilter=actx.createBiquadFilter();noiseFilter.type='lowpass';noiseFilter.frequency.value=300;
+    noiseGain=actx.createGain();noiseGain.gain.value=0;
+    src.connect(noiseFilter);noiseFilter.connect(noiseGain);noiseGain.connect(actx.destination);src.start();
+    hornGain=actx.createGain();hornGain.gain.value=0;
+    const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1400;
+    for(const f of [311.1,370]){const o=actx.createOscillator();o.type='sawtooth';o.frequency.value=f;o.connect(hornGain);o.start();}
+    hornGain.connect(lp);lp.connect(actx.destination);
+  }catch(e){actx=null;}
+}
+
+/* ---- input ---- */
+addEventListener('keydown',e=>{
+  if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();
+  keys[e.code]=true;
+  if(e.repeat)return;
+  if(e.code==='KeyC')camMode=camMode==='cab'?'chase':'cab';
+  if(e.code==='KeyP'&&started)paused=!paused,showMsg(paused?'Paused':'Resumed','',1200);
+  if(e.code==='KeyR'&&started){resetGame();}
+  if(e.code==='Enter'&&!started)startGame();
+});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+function startGame(){if(started)return;started=true;$('start').style.display='none';initAudio();resetGame();}
+$('go').onclick=startGame;
+$('again').onclick=()=>{resetGame();};
+
+/* ---- simulation ---- */
+function finish(missed){
+  ended=true;phase='end';
+  $('endtitle').textContent=missed?'End of the line (overran)':'Service complete';
+  const total=Math.max(0,Math.round(score));
+  const rating=total>=3300?'Gold driver':total>=2400?'Silver driver':total>=1500?'Bronze driver':'Learner driver';
+  $('endbody').textContent='Rating: '+rating+'  |  Score '+total+'  |  Journey time '+fmtTime(elapsed);
+  $('endtable').innerHTML=stopsLog.map(r=>'<tr><td>'+r.name+'</td><td>'+r.note+'</td><td style="text-align:right">'+r.pts+'</td></tr>').join('');
+  setTimeout(()=>{ if(ended)$('end').style.display='flex'; },1800);
+}
+function step(dt){
+  elapsed+=(phase==='end')?0:dt;
+  // set-speed control: W raises the set speed, S lowers it, the train follows it
+  const emerg=!!keys.Space;
+  if(phase==='dwell'||phase==='end'){setSpeed=0;v=0;}
+  else{
+    if(keys.KeyW||keys.ArrowUp) setSpeed=Math.min(MAX_SET,setSpeed+SET_RATE*dt);
+    if(keys.KeyS||keys.ArrowDown) setSpeed=Math.max(0,setSpeed-SET_RATE*dt);
+    if(emerg) setSpeed=0;
+    const accelMax=1.1*Math.max(0.2,1-v/40);
+    let a=clamp(1.5*(setSpeed-v),-(emerg?1.8:1.0),accelMax);
+    v=Math.max(0,v+a*dt);
+    if(setSpeed===0&&v<0.1)v=0;
+    s+=v*dt;
+  }
+  // buffers
+  if(s>L-9){s=L-9;if(v>1.5){score-=300;showMsg('Hit the buffers!','bad',3000);}v=0;setSpeed=0;}
+
+  if(phase==='dwell'){
+    dwell-=dt;
+    if(dwell<=0){phase='run';showMsg('Doors closed - ready to depart (hold W)','good',3000);}
+  } else if(phase==='run'&&next<STATIONS.length){
+    const st=STATIONS[next],stopped=v<0.05&&setSpeed===0;
+    if(stopped&&s>=st.target-30&&s<=st.target+6){
+      const err=st.target-s,pts=Math.round(clamp(1000-Math.abs(err)*45,100,1000));
+      score+=pts;stopsLog.push({name:st.name,note:(err>=0?err.toFixed(1)+' m short':Math.abs(err).toFixed(1)+' m over')+(Math.abs(err)<2?'  - perfect!':''),pts});
+      $('st'+next).classList.add('done');
+      showMsg(st.name+(Math.abs(err)<2?' - perfect stop! +':' - stopped. +')+pts,'good',3500);
+      if(next===STATIONS.length-1){finish(false);} else{phase='dwell';dwell=6;next++;}
+    } else if(s>st.target+6){
+      score-=300;stopsLog.push({name:st.name,note:'overshot the platform',pts:-300});
+      showMsg('Overshot '+st.name+'! -300','bad',3500);
+      if(next===STATIONS.length-1){finish(true);}else{next++;}
+    }
+  }
+  // HUD
+  const mph=Math.round(v*MPH);
+  $('spd').textContent=mph;
+  $('setspd').textContent=Math.round(setSpeed*MPH);
+  $('setfill').style.height=(setSpeed/MAX_SET*100)+'%';
+  $('setfill').style.background=emerg?'#ff5a4d':'';
+  const open=phase==='dwell';
+  $('doortxt').textContent=open?'OPEN':'CLOSED';$('doorlight').classList.toggle('on',open);
+  $('score').textContent=Math.max(0,Math.round(score));$('time').textContent=fmtTime(elapsed);
+  if(next<STATIONS.length){
+    const st=STATIONS[next];$('nextname').textContent=st.name;
+    const d=st.target-s;$('nextdist').textContent=d>0?(d>1000?(d/1000).toFixed(2)+' km':Math.round(d)+' m'):'Overshot';
+  }else{$('nextname').textContent='Terminus reached';$('nextdist').textContent='-';}
+  $('dot').style.left='calc(24px + (100% - 48px) * '+(s/L)+')';
+  if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)$('msg').classList.remove('show');}
+  // audio
+  if(actx){
+    noiseGain.gain.value=0.03+Math.min(1,v/28)*0.22;noiseFilter.frequency.value=180+v*22;
+    hornGain.gain.setTargetAtTime(keys.KeyH?0.1:0,actx.currentTime,0.03);
+  }
+}
+let bobT=0;
+function render(dt){
+  placeTrain(s);
+  train.visible=camMode==='chase';
+  bobT+=dt*v*0.9;
+  if(camMode==='cab'){
+    const f=at(s-1.2),a=at(s+40);
+    const bob=Math.sin(bobT*1.7)*0.012*Math.min(1,v/10);
+    camera.position.set(f.x,2.95+bob,f.z);
+    camera.lookAt(a.x,2.55,a.z);
+    camera.rotateZ(Math.sin(bobT*0.9)*0.0035*Math.min(1,v/10));
+  }else{
+    const f=at(s-45),a=at(s-12);
+    camera.position.set(f.x,9,f.z);camera.lookAt(a.x,2.5,a.z);
+  }
+  scene.getObjectByName('dome').position.copy(camera.position);
+  renderer.render(scene,camera);
+}
+function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+
+resetGame();
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(started&&!paused)step(dt);
+  render(dt);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
