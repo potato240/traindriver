@@ -1019,17 +1019,9 @@ function initAudio(){
     // white noise: rail clacks + rain
     whiteBuf=actx.createBuffer(1,actx.sampleRate,actx.sampleRate);
     const w=whiteBuf.getChannelData(0);for(let i=0;i<w.length;i++)w[i]=Math.random()*2-1;
-    // rain: three layers of filtered noise (hiss, body, low patter) swelling gently like gusts, plus random drops (see rainTick)
+    // rain is made only of individual drops (see rainTick): no continuous background bed
     rainGain=actx.createGain();rainGain.gain.value=0;rainGain.connect(master);
-    const gust=actx.createGain();gust.gain.value=0.8;gust.connect(rainGain);
-    const lfo=actx.createOscillator(),lfoDepth=actx.createGain();lfo.frequency.value=0.13;lfoDepth.gain.value=0.22;lfo.connect(lfoDepth);lfoDepth.connect(gust.gain);lfo.start();
-    for(const [type,freq,q,vol,off] of [['bandpass',900,0.8,0.6,0.4],['lowpass',500,0.7,0.6,0.7]]){
-      const rs=actx.createBufferSource();rs.buffer=whiteBuf;rs.loop=true;
-      const f=actx.createBiquadFilter();f.type=type;f.frequency.value=freq;f.Q.value=q;
-      const lg=actx.createGain();lg.gain.value=vol;
-      rs.connect(f);f.connect(lg);lg.connect(gust);rs.start(0,off);
-    }
-    rainBus=actx.createGain();rainBus.gain.value=0.5;rainBus.connect(master);
+    rainBus=actx.createGain();rainBus.gain.value=0.8;rainBus.connect(master);
     // horn
     hornGain=actx.createGain();hornGain.gain.value=0;
     const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1400;
@@ -1050,7 +1042,7 @@ function rainDrop(){          // one drop hitting a roof / the ground
   const t=actx.currentTime+Math.random()*0.04,src=actx.createBufferSource();src.buffer=whiteBuf;
   const bp=actx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=900+Math.random()*2200;bp.Q.value=2+Math.random()*3;
   const g=actx.createGain();
-  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.012+Math.random()*0.025,t+0.004);g.gain.exponentialRampToValueAtTime(0.0001,t+0.03+Math.random()*0.03);
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.035+Math.random()*0.06,t+0.003);g.gain.exponentialRampToValueAtTime(0.0001,t+0.03+Math.random()*0.03);
   let out=g;if(actx.createStereoPanner){const pn=actx.createStereoPanner();pn.pan.value=Math.random()*2-1;g.connect(pn);out=pn;}
   src.connect(bp);bp.connect(g);out.connect(rainBus);src.start(t,Math.random()*0.8);src.stop(t+0.09);
 }
@@ -1059,6 +1051,8 @@ function rainTick(dt){        // call every frame: fades the rain bed in/out and
   const on=CFG.weather==='rain';
   rainGain.gain.setTargetAtTime(on?0.2:0,actx.currentTime,0.5);
   if(!on)return;
+  rainAcc+=dt;
+  while(rainAcc>0.035){rainAcc-=0.035;rainDrop();}
 }
 function tone(freq,at0,dur,vol){
   if(!actx)return;const t=actx.currentTime+at0,o=actx.createOscillator(),g=actx.createGain();
