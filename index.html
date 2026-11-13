@@ -1038,19 +1038,12 @@ function clack(vol,delay){   // one wheel hitting a rail joint
   const o=actx.createOscillator(),og=actx.createGain();o.type='sine';o.frequency.setValueAtTime(95,t);o.frequency.exponentialRampToValueAtTime(52,t+0.09);
   og.gain.setValueAtTime(vol*0.9,t);og.gain.exponentialRampToValueAtTime(0.0001,t+0.11);o.connect(og);og.connect(master);o.start(t);o.stop(t+0.13);
 }
-function rainDrop(){          // one drop hitting water / a surface: a very short, bright splat (not a resonant 'tock')
-  const t=actx.currentTime+Math.random()*0.02,src=actx.createBufferSource();src.buffer=whiteBuf;
-  const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=2200+Math.random()*3800;hp.Q.value=0.4;
-  const g=actx.createGain(),dur=0.008+Math.random()*0.014;
-  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.02+Math.random()*0.05,t+0.0015);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+function rainDrop(){          // every drop is a small water 'plip': a quick rising bubble tone
+  const t=actx.currentTime+Math.random()*0.02,o=actx.createOscillator(),g=actx.createGain(),f0=650+Math.random()*900;
+  o.type='sine';o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f0*(1.5+Math.random()*0.6),t+0.03+Math.random()*0.02);
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.012+Math.random()*0.03,t+0.004);g.gain.exponentialRampToValueAtTime(0.0001,t+0.05+Math.random()*0.04);
   let out=g;if(actx.createStereoPanner){const pn=actx.createStereoPanner();pn.pan.value=Math.random()*2-1;g.connect(pn);out=pn;}
-  src.connect(hp);hp.connect(g);out.connect(rainBus);src.start(t,Math.random()*0.8);src.stop(t+dur+0.02);
-  if(Math.random()<0.07){      // now and then a little water 'plip': a quick rising bubble tone
-    const o=actx.createOscillator(),og=actx.createGain(),f0=700+Math.random()*700;
-    o.type='sine';o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f0*1.8,t+0.035);
-    og.gain.setValueAtTime(0.0001,t);og.gain.exponentialRampToValueAtTime(0.02,t+0.004);og.gain.exponentialRampToValueAtTime(0.0001,t+0.05);
-    o.connect(og);og.connect(out);o.start(t);o.stop(t+0.06);
-  }
+  o.connect(g);out.connect(rainBus);o.start(t);o.stop(t+0.11);
 }
 function rainTick(dt){        // call every frame: fades the rain bed in/out and sprinkles drops
   if(!actx||!rainGain)return;
@@ -1058,7 +1051,7 @@ function rainTick(dt){        // call every frame: fades the rain bed in/out and
   rainGain.gain.setTargetAtTime(on?0.2:0,actx.currentTime,0.5);
   if(!on)return;
   rainAcc+=dt;
-  while(rainAcc>0.007){rainAcc-=0.007;rainDrop();}
+  while(rainAcc>0.012){rainAcc-=0.012;rainDrop();}
 }
 function tone(freq,at0,dur,vol){
   if(!actx)return;const t=actx.currentTime+at0,o=actx.createOscillator(),g=actx.createGain();
