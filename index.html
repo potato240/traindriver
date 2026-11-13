@@ -221,8 +221,10 @@ function offsetRight(wps,d){   // shift a waypoint list sideways (right of trave
     return [Math.round((p[0]-tz*d)*100)/100,Math.round((p[1]+tx*d)*100)/100];
   });
 }
-const MOOR_STEM=[[50,460],[-50,460],[-100,460],[-200,460],[-350,460],[-500,460],[-650,460]];      // Moorside County lines: shared stem out of Sebford Wharf Road
-const MOOR_SHARED=[[-2250,-480],[-2350,-480],[-2450,-480]];                                    // ... and the shared stretch through Longbay West
+const MOOR_K=2;   // Moorside County distances are stretched by this factor, away from Sebford Wharf Road
+const mf=p=>p[0]>=-100?p:[-100+MOOR_K*(p[0]+100),460+MOOR_K*(p[1]-460)];
+const MOOR_STEM=[[50,460],[-50,460],[-100,460],[-200,460],[-350,460],[-500,460],[-650,460]].map(mf);      // Moorside County lines: shared stem out of Sebford Wharf Road
+const MOOR_SHARED=[[-2250,-480],[-2350,-480],[-2450,-480]].map(mf);                                    // ... and the shared stretch through Longbay West
 const LINES = {
   aqua: {
     id:'aqua', name:'Sebford Aqua', first:'Sebford', second:'Aqua', short:'Aqua line service',
@@ -279,12 +281,12 @@ const LINES = {
   },
   moor1: {
     id:'moor1', name:'Moorside County Regional - Route 1', first:'Moorside County', second:'Route 1', short:'Moorside County Regional route 1 service',
-    color:'#2e9e5b', colorHex:0x2e9e5b, maxSet:29, side:-1, noShed:true,
+    color:'#2e9e5b', colorHex:0x2e9e5b, maxSet:35, side:-1, noShed:true,
     voice:{kind:'male',n:1,pitch:0.85,rate:0.92,lang:'en-GB'}, jingle:[[440,0,.4,.16],[587,.35,.6,.16]],
     cars:3, carLen:20, platHalf:55, stopAhead:47, platH:1.0, eye:2.9,
     stand:{ahead:44,off:4.2,poMin:2.5,poMax:7.2,walk:50,eyeY:2.7},
-    wp: MOOR_STEM.concat([[-800,470],[-950,490],[-1150,500],[-1350,470],[-1550,380],[-1700,300],[-1850,160],[-1980,-80],[-2080,-300],[-2150,-440]],
-      MOOR_SHARED,[[-2550,-480],[-2650,-480],[-2750,-470],[-2850,-470]]),
+    wp: MOOR_STEM.concat([[-800,470],[-950,490],[-1150,500],[-1350,470],[-1550,380],[-1700,300],[-1850,160],[-1980,-80],[-2080,-300],[-2150,-440]].map(mf),
+      MOOR_SHARED,[[-2550,-480],[-2650,-480],[-2750,-470],[-2850,-470]].map(mf)),
     stops:[
       { name:'Sebford Wharf Road', wp:[-100,460] },
       { name:'Feymere',            wp:[-1150,500] },
@@ -294,12 +296,12 @@ const LINES = {
   },
   moor2: {
     id:'moor2', name:'Moorside County Regional - Route 2', first:'Moorside County', second:'Route 2', short:'Moorside County Regional route 2 service',
-    color:'#d64545', colorHex:0xd64545, maxSet:29, side:1, noShed:true,
+    color:'#d64545', colorHex:0xd64545, maxSet:35, side:1, noShed:true,
     voice:{kind:'female',n:1,pitch:1.0,rate:1.0,lang:'en-GB'}, jingle:[[587,0,.3,.16],[440,.3,.3,.16],[349,.6,.6,.16]],
     cars:3, carLen:20, platHalf:55, stopAhead:47, platH:1.0, eye:2.9,
     stand:{ahead:44,off:4.2,poMin:2.5,poMax:7.2,walk:50,eyeY:2.7},
-    wp: offsetRight(MOOR_STEM,4).concat([[-800,440],[-950,380],[-1100,320],[-1250,250],[-1450,130],[-1650,-60],[-1850,-250],[-2000,-380],[-2120,-460]],
-      offsetRight(MOOR_SHARED,4),[[-2550,-500],[-2620,-540],[-2680,-640],[-2710,-780],[-2720,-950],[-2710,-1100],[-2680,-1250],[-2620,-1380],[-2540,-1520],[-2450,-1620],[-2380,-1700]]),
+    wp: offsetRight(MOOR_STEM,4).concat([[-800,440],[-950,380],[-1100,320],[-1250,250],[-1450,130],[-1650,-60],[-1850,-250],[-2000,-380],[-2120,-460]].map(mf),
+      offsetRight(MOOR_SHARED,4),[[-2550,-500],[-2620,-540],[-2680,-640],[-2710,-780],[-2720,-950],[-2710,-1100],[-2680,-1250],[-2620,-1380],[-2540,-1520],[-2450,-1620],[-2380,-1700]].map(mf)),
     stops:[
       { name:'Sebford Wharf Road', wp:[-100,456] },
       { name:'Forth Park',         wp:[-1100,320] },
@@ -310,6 +312,8 @@ const LINES = {
       { name:'Lee Central',        wp:[-2540,-1520] }]
   }
 };
+
+for(const id of ['moor1','moor2'])LINES[id].stops.forEach(st=>{st.wp=mf(st.wp);});
 
 /* settings come from the URL so line / route / time / weather survive a reload */
 const Q=new URLSearchParams(location.search);
@@ -429,7 +433,7 @@ rain.frustumCulled=false;rain.visible=false;scene.add(rain);
 const ENV_WIN=[];     // building window materials (glow at night)
 let headBase=0;       // headlight intensity chosen by time/weather
 /* ground, sea, beach */
-const ground=new THREE.Mesh(new THREE.PlaneGeometry(12000,12000),lam(0x7db35c));ground.rotation.x=-Math.PI/2;ground.position.set(-800,-0.3,500);scene.add(ground);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(18000,18000),lam(0x7db35c));ground.rotation.x=-Math.PI/2;ground.position.set(-2500,-0.3,500);scene.add(ground);
 const SEA=[-800,450,550,1040], BEACH=[-800,470,1040,1078], DOCKWATER=[350,1100,2140,2700], QUAY=[400,900,2092,2142];
 function flatRect(r,y,mat,parent){const m=new THREE.Mesh(new THREE.PlaneGeometry(r[1]-r[0],r[3]-r[2]),mat);m.rotation.x=-Math.PI/2;m.position.set((r[0]+r[1])/2,y,(r[2]+r[3])/2);(parent||scene).add(m);return m;}
 flatRect(SEA,-0.05,lam(0x2f86c4));
@@ -823,7 +827,7 @@ const noTreeCircles=[];     // {x,z,r} places trees must keep out of
 }
 
 /* ---- Moorside County: villages, a river, a pond, a forest and the coast at Longbay ---- */
-const SEA2=[-4300,-2970,-1250,420],BEACH2=[-2970,-2905,-1250,420];
+const SEA2=[-8200,-5840,-2960,380],BEACH2=[-5840,-5710,-2960,380];
 noTree.push(SEA2,BEACH2);
 {
   const R1=OUT.moor1,R2=OUT.moor2,sOf=(P,n)=>P.stops.find(x=>x.name===n).s;
@@ -903,12 +907,14 @@ noTree.push(SEA2,BEACH2);
 
 /* ---- trees ---- */
 {
-  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),10000);
-  const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),10000);
-  const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),10000);
+  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),16000);
+  const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),16000);
+  const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),16000);
   const d=new THREE.Object3D();let a=0,b=0;
-  for(let i=0;i<48000&&a+b<10000;i++){
-    const west=i%3===0,x=west?rr(-3500,-1700):rr(-1800,3100),z=west?rr(-1900,1000):rr(-550,3500);
+  for(let i=0;i<60000&&a+b<16000;i++){
+    const west=i%2===0;let x,z;
+    if(west){const WP=i%4===0?OUT.moor1:OUT.moor2,q=WP.railPt(rr(0,WP.L-1),rr(-500,500));x=q.x+rr(-25,25);z=q.z+rr(-25,25);}
+    else{x=rr(-1800,3100);z=rr(-550,3500);}
     if(nearTrack(x,z,14))continue;
     if(noTreeCircles.some(c=>(c.x-x)**2+(c.z-z)**2<c.r*c.r))continue;
     let bad=false;for(const r of noTree)if(inRect(x,z,r)){bad=true;break;}if(bad)continue;
@@ -1118,7 +1124,7 @@ function updateRain(dt){
  * ================================================================== */
 const SHIFT_LEN=360;                                   // seconds per shift
 const REQ={whistle:'WHISTLE only',light:'GREEN LIGHT only',both:'WHISTLE + GREEN LIGHT'};
-const AI_CRUISE={aqua:24,airlink:30,metro:11,moor1:27,moor2:27};
+const AI_CRUISE={aqua:24,airlink:30,metro:11,moor1:31,moor2:31};
 const ALL_STATIONS=(()=>{const seen=[];for(const id of LINE_IDS)for(const st of LINES[id].stops)if(!seen.includes(st.name))seen.push(st.name);return seen;})();
 const D={time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,mlook:0,alook:0,base:0,stand:{x:0,z:0},lines:[],name:'',log:[]};
 let aiTrains=[],blowTimer=0;
