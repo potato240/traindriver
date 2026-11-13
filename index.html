@@ -38,6 +38,8 @@
   #setspd{font-size:38px;font-weight:800;color:var(--ok);line-height:1;font-variant-numeric:tabular-nums}
   #setbox small{opacity:.7;letter-spacing:.12em;font-size:11px}
   #doors{width:120px;height:130px;padding:14px 8px;text-align:center}
+  #doors.pulse{animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{50%{border-color:#ffd23f;box-shadow:0 0 14px rgba(255,210,63,.55)}}
   #doors b{display:block;font-size:18px;margin:6px 0}
   .dl{width:16px;height:16px;border-radius:50%;background:#555;margin:0 auto}
   .dl.on{background:var(--ok);box-shadow:0 0 12px var(--ok)}
@@ -74,7 +76,7 @@
 <div id="ahead" class="panel"></div>
 
 <div id="hud">
-  <div id="doors" class="panel"><small style="opacity:.7;letter-spacing:.1em">DOORS</small><b id="doortxt">OPEN</b><div class="dl" id="doorlight"></div></div>
+  <div id="doors" class="panel"><small style="opacity:.7;letter-spacing:.1em">DOORS</small><b id="doortxt">OPEN</b><div class="dl" id="doorlight"></div><small id="doorhint" style="display:block;margin-top:6px;font-size:11px;color:#ffd23f;min-height:14px"></small></div>
   <div id="speedo" class="panel"><div id="spd">0</div><small>MPH</small></div>
   <div id="levers" class="panel">
     <div class="lever"><div class="track"><div class="fill" id="setfill"></div></div>SET SPEED</div>
@@ -90,6 +92,7 @@
       <tr><td><kbd>W</kbd> / <kbd>&uarr;</kbd></td><td>Raise the set speed - the train speeds up to it</td></tr>
       <tr><td><kbd>S</kbd> / <kbd>&darr;</kbd></td><td>Lower the set speed - the train slows down to it</td></tr>
       <tr><td><kbd>Space</kbd></td><td>Emergency stop</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Open / close the doors (when stopped at a platform)</td></tr>
       <tr><td><kbd>H</kbd> / <kbd>M</kbd></td><td>Horn / mute all sound</td></tr>
       <tr><td><kbd>T</kbd> / <kbd>Y</kbd></td><td>Change time of day / weather</td></tr>
       <tr><td><kbd>C</kbd></td><td>Cab / chase camera</td></tr>
@@ -158,7 +161,7 @@ const LINES = {
     stops:[
       { name:'Sebford Central', wp:[0,0] },
       { name:'Westercoast',     wp:[350,1110] },
-      { name:'Lars Crossing',   wp:[-1190,1560] },
+      { name:'Lars Crossing',   wp:[-1112,1300] },     // on the bend, so its platform curves with the track
       { name:'Airport Plaza',   wp:[-450,2260] },
       { name:'Terminal 1',      wp:[50,2260] },
       { name:'Terminal 2',      wp:[550,2260] }],
@@ -280,47 +283,52 @@ flatRect(SEA,-0.05,lam(0x2f86c4));
 flatRect(BEACH,-0.15,lam(0xe6d6a2));
 if(!AIRLINK){flatRect(DOCKWATER,-0.05,lam(0x2a5d7e));flatRect(QUAY,-0.12,lam(0x8d9296));}
 
-/* ---- track ---- */
+/* ---- track (the Airlink is double track: a second line runs alongside on the left) ---- */
+const TRACK_OFFSETS=AIRLINK?[0,-4.0]:[0];       // right-positive offsets from the centre line
+function railPt(s,off){const p=at(s);return {x:p.x-p.tz*off,z:p.z+p.tx*off,tx:p.tx,tz:p.tz};}
 {
-  const dummy=new THREE.Object3D();
-  const rails=new THREE.InstancedMesh(new THREE.BoxGeometry(0.09,0.17,1),lam(0xa9acb0),L*2);
+  const dummy=new THREE.Object3D(),nT=TRACK_OFFSETS.length;
+  const rails=new THREE.InstancedMesh(new THREE.BoxGeometry(0.09,0.17,1),lam(0xa9acb0),L*2*nT);
   let n=0;
-  for(let i=0;i<L;i++){
+  for(const off of TRACK_OFFSETS)for(let i=0;i<L;i++){
     const dx=Px[i+1]-Px[i],dz=Pz[i+1]-Pz[i],len=Math.hypot(dx,dz),rx=-dz/len,rz=dx/len;
-    for(const sd of [-0.7175,0.7175]){
+    for(const sd of [off-0.7175,off+0.7175]){
       dummy.position.set((Px[i]+Px[i+1])/2+rx*sd,0.285,(Pz[i]+Pz[i+1])/2+rz*sd);
       dummy.rotation.set(0,Math.atan2(dx,dz),0);dummy.scale.set(1,1,len*1.03);dummy.updateMatrix();rails.setMatrixAt(n++,dummy.matrix);
     }
   }
   scene.add(rails);
-  const sc=Math.floor(L/0.72),sleepers=new THREE.InstancedMesh(new THREE.BoxGeometry(2.6,0.15,0.28),lam(0x6b5a4a),sc);
-  for(let i=0;i<sc;i++){
-    const p=at(i*0.72);dummy.position.set(p.x,0.125,p.z);dummy.rotation.set(0,Math.atan2(p.tx,p.tz),0);dummy.scale.set(1,1,1);dummy.updateMatrix();sleepers.setMatrixAt(i,dummy.matrix);
+  const sc=Math.floor(L/0.72),sleepers=new THREE.InstancedMesh(new THREE.BoxGeometry(2.6,0.15,0.28),lam(0x6b5a4a),sc*nT);
+  n=0;
+  for(const off of TRACK_OFFSETS)for(let i=0;i<sc;i++){
+    const p=railPt(i*0.72,off);dummy.position.set(p.x,0.125,p.z);dummy.rotation.set(0,Math.atan2(p.tx,p.tz),0);dummy.scale.set(1,1,1);dummy.updateMatrix();sleepers.setMatrixAt(n++,dummy.matrix);
   }
   scene.add(sleepers);
-  // ballast ribbon
-  const pos=[],idx=[];let v=0;
-  for(let s=0;s<=L-2;s+=2){
-    const p=at(s),rx=-p.tz,rz=p.tx;
-    pos.push(p.x-rx*1.95,0.1,p.z-rz*1.95, p.x+rx*1.95,0.1,p.z+rz*1.95);
-    if(v>0){idx.push(v-2,v-1,v,v-1,v+1,v);}
-    v+=2;
+  const ballastMat=new THREE.MeshLambertMaterial({color:0x8a8780,side:THREE.DoubleSide});
+  for(const off of TRACK_OFFSETS){
+    const pos=[],idx=[];let v=0;
+    for(let s=0;s<=L-2;s+=2){
+      const p=at(s),rx=-p.tz,rz=p.tx;
+      pos.push(p.x+rx*(off-1.95),0.1,p.z+rz*(off-1.95), p.x+rx*(off+1.95),0.1,p.z+rz*(off+1.95));
+      if(v>0){idx.push(v-2,v-1,v,v-1,v+1,v);}
+      v+=2;
+    }
+    const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
+    scene.add(new THREE.Mesh(bg,ballastMat));
   }
-  const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
-  scene.add(new THREE.Mesh(bg,new THREE.MeshLambertMaterial({color:0x8a8780,side:THREE.DoubleSide})));
 }
 /* overhead masts + wire (skipped inside Central trainshed) */
 {
   const dummy=new THREE.Object3D(),count=Math.floor(L/50),masts=new THREE.InstancedMesh(new THREE.BoxGeometry(0.28,6.6,0.28),lam(0x5a6168),count+1);
   let n=0;const wire=[];
+  const mastOff=AIRLINK?-2.0:-2.9;     // between the two tracks on the Airlink, beside the track on the Aqua
   for(let k=0;k<=count;k++){
-    const s=k*50+10,p=at(s);
+    const s=k*50+10,p=railPt(s,mastOff);
     if(s>SHED[0]&&s<SHED[1])continue;
-    const lx=p.tz,lz=-p.tx; // left of travel
-    dummy.position.set(p.x+lx*2.9,3.3,p.z+lz*2.9);dummy.rotation.set(0,0,0);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
+    dummy.position.set(p.x,3.3,p.z);dummy.rotation.set(0,0,0);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
   }
   masts.count=n;scene.add(masts);
-  for(let s=0;s<L-6;s+=5){if(s>SHED[0]&&s<SHED[1])continue;const a=at(s),b=at(s+5);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
+  for(const off of TRACK_OFFSETS)for(let s=0;s<L-6;s+=5){if(s>SHED[0]&&s<SHED[1])continue;const a=railPt(s,off),b=railPt(s+5,off);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
   const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
   scene.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0x2d3338})));
 }
@@ -336,43 +344,62 @@ function labelTex(text,bg,fg,w,h){
   const t=new THREE.CanvasTexture(c);t.anisotropy=4;return t;
 }
 
-/* ---- stations ---- */
+/* ---- stations: platforms, canopies and signs all follow the curve of the track ---- */
 const matLamp=new THREE.MeshBasicMaterial({color:0xfff3c4});
-const matPlat=lam(0xbcbcb8),matRoof=lam(0x2f4858),matPost=lam(0x57656d),matYellow=lam(0xf2c500);
+const DS={side:THREE.DoubleSide};
+const matPlat=lam(0xbcbcb8,DS),matRoof=lam(0x2f4858,DS),matPost=lam(0x57656d),matYellow=lam(0xf2c500,DS);
+function pt(s,off,y){const p=railPt(s,off);return [p.x,y,p.z];}      // off: right-positive
+function ribbon(s0,s1,step,fn,mat){
+  const pos=[],idx=[];let v=0;
+  for(let s=s0;s<=s1+1e-6;s+=step){pos.push(...fn(s));if(v>0)idx.push(v-2,v-1,v,v-1,v+1,v);v+=2;}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);g.computeVertexNormals();
+  const m=new THREE.Mesh(g,mat);scene.add(m);return m;
+}
+function put(w,h,d,mat,s,off,y){   // box standing beside the track, turned to follow it
+  const p=railPt(s,off),m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.position.set(p.x,y,p.z);m.rotation.y=Math.atan2(p.tx,p.tz);scene.add(m);return m;
+}
+function putPlane(geo,mat,s,off,y,yawAdd){
+  const p=railPt(s,off),m=new THREE.Mesh(geo,mat);
+  m.position.set(p.x,y,p.z);m.rotation.y=Math.atan2(p.tx,p.tz)+yawAdd;scene.add(m);return m;
+}
 STATIONS.concat(PASS).forEach((st,k)=>{
-  const g=new THREE.Group();g.position.set(Px[st.s],0,Pz[st.s]);g.rotation.y=YAW[st.s];scene.add(g);
-  // local +z = direction of travel, -x = right (platform side)
-  box(6,1.0,PLAT_HALF*2,matPlat,-4.7,0.5,0,g);
-  box(0.3,0.02,PLAT_HALF*2,matYellow,-2.0,1.01,0,g);
-  box(7.8,0.25,92,matRoof,-5.0,4.8,0,g);
-  for(let z=-45;z<=45;z+=15){box(0.3,4.8,0.3,matPost,-7.4,2.4,z,g);box(0.5,0.12,1.4,matLamp,-5.2,4.6,z,g);}
-  const nameTex=labelTex(st.name,LINE.color,'#ffffff');
-  for(const z of [-38,0,38]){
-    const sign=new THREE.Mesh(new THREE.PlaneGeometry(6,1.5),new THREE.MeshBasicMaterial({map:nameTex}));
-    sign.position.set(-7.1,2.9,z);sign.rotation.y=Math.PI/2;g.add(sign);
-  }
+  const a=Math.max(1,st.s-PLAT_HALF),b=Math.min(L-2,st.s+PLAT_HALF);
+  // platform: top, edge walls and the yellow line
+  ribbon(a,b,2,s=>[...pt(s,1.7,1.0),...pt(s,7.7,1.0)],matPlat);
+  ribbon(a,b,2,s=>[...pt(s,1.7,0),...pt(s,1.7,1.0)],matPlat);
+  ribbon(a,b,2,s=>[...pt(s,7.7,0),...pt(s,7.7,1.0)],matPlat);
+  ribbon(a,b,2,s=>[...pt(s,1.95,1.012),...pt(s,2.3,1.012)],matYellow);
+  // canopy
+  const ca=st.s-46,cb=st.s+46;
+  ribbon(ca,cb,2,s=>[...pt(s,1.1,5.05),...pt(s,8.9,5.05)],matRoof);
+  ribbon(ca,cb,2,s=>[...pt(s,1.1,4.8),...pt(s,8.9,4.8)],matRoof);
+  ribbon(ca,cb,2,s=>[...pt(s,1.1,4.8),...pt(s,1.1,5.05)],matRoof);
+  ribbon(ca,cb,2,s=>[...pt(s,8.9,4.8),...pt(s,8.9,5.05)],matRoof);
+  for(let z=-45;z<=45;z+=15){put(0.3,4.8,0.3,matPost,st.s+z,7.4,2.4);put(0.5,0.12,1.4,matLamp,st.s+z,5.2,4.6);}
+  const nameTex=labelTex(st.name,LINE.color,'#ffffff'),signGeo=new THREE.PlaneGeometry(6,1.5);
+  for(const z of [-38,0,38])putPlane(signGeo,new THREE.MeshBasicMaterial({map:nameTex}),st.s+z,7.1,2.9,Math.PI/2);
   // stop board (not at stations the train runs through)
   if(!st.pass){
     const stopTex=labelTex('STOP  4 CAR','#c8102e','#ffffff',256,96);
-    box(0.15,2.4,0.15,matPost,-3.1,2.2,STOP_AHEAD+2,g);
-    const sb=new THREE.Mesh(new THREE.PlaneGeometry(2.4,0.9),new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}));
-    sb.position.set(-3.1,2.9,STOP_AHEAD+2);sb.rotation.y=Math.PI;g.add(sb);
+    put(0.15,2.4,0.15,matPost,st.s+STOP_AHEAD+2,3.1,2.2);
+    putPlane(new THREE.PlaneGeometry(2.4,0.9),new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}),st.s+STOP_AHEAD+2,3.1,2.9,Math.PI);
   }
-  // station building behind platform
-  box(10,5,34,lam(st===CEN?0xb5a58a:0xc9b79a),-13.5,2.5,-8,g);
-  box(10.6,0.5,34.6,lam(0x6a4a3a),-13.5,5.2,-8,g);
+  // station building behind the platform
+  put(10,5,34,lam(st===CEN?0xb5a58a:0xc9b79a),st.s-8,13.5,2.5);
+  put(10.6,0.5,34.6,lam(0x6a4a3a),st.s-8,13.5,5.2);
   if(st===CEN){ // Sebford Central trainshed + terminus wall (behind the train outbound, ahead of it on the return)
-    const f=new THREE.Group();f.position.copy(g.position);f.rotation.y=YAW[st.s]+(REVERSE?Math.PI:0);scene.add(f);
+    const f=new THREE.Group();f.position.set(Px[st.s],0,Pz[st.s]);f.rotation.y=YAW[st.s]+(REVERSE?Math.PI:0);scene.add(f);
     const xs=REVERSE?-1:1;
     box(16,0.5,236,lam(0x37505e),0,7.2,-32,f);
     for(let z=-146;z<=82;z+=19){box(0.4,7.2,0.4,matPost,-7.6,3.6,z,f);box(0.4,7.2,0.4,matPost,7.6,3.6,z,f);box(0.6,0.12,1.4,matLamp,0,6.9,z,f);}
     box(26,16,3,lam(0x8c7a62),0,8,-153,f);
-    box(6,1.0,170,matPlat,4.7*xs,0.5,-60,f);   // opposite platform
+    if(!AIRLINK)box(6,1.0,170,matPlat,4.7*xs,0.5,-60,f);   // opposite platform (the Airlink has its second track here instead)
   }
 });
-/* buffer stops at both ends of the line */
-for(const [s0,dir] of [[1,-1],[L-1,1]]){
-  const p=at(s0),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
+/* buffer stops at both ends of every track */
+for(const [s0,dir] of [[1,-1],[L-1,1]])for(const off of TRACK_OFFSETS){
+  const p=railPt(s0,off),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
   box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,dir*1,b);box(0.3,1.6,0.3,matPost,-1.2,0.8,dir*1.6,b);box(0.3,1.6,0.3,matPost,1.2,0.8,dir*1.6,b);
 }
 
@@ -487,7 +514,7 @@ if(AIRLINK){
       const arm=box(0.14,0.14,4.4,lam(sx>0?0xf2f2f2:0xc0281e),sx*4.2,3.4,sz*5.4+0,g);arm.rotation.x=-0.9*sz;
     }
     const roof=lam(0xb5452f),wall=[lam(0xf1ead8),lam(0xe8c7a1),lam(0xcfe0e6),lam(0xf0d9d4)];
-    for(let x=-1330;x<-1050;x+=26)for(let z=1420;z<1720;z+=26){
+    for(let x=-1330;x<-1000;x+=26)for(let z=1260;z<1720;z+=26){
       const px=x+rr(-4,4),pz=z+rr(-4,4);
       if(nearTrack(px,pz,22)||Math.abs(pz-p.z)<14)continue;
       const w=rr(9,13),d=rr(8,11),h=rr(5,8);
@@ -599,12 +626,13 @@ const keys={};
 let started=false,paused=false,camMode='cab';
 const MAX_SET=LINE.maxSet, SET_RATE=2.5;   // 70 mph (Airlink 80 mph) max set speed; W/S change it by ~5.6 mph per second held
 let s,v,setSpeed,phase,dwell,next,score,elapsed,ended,stopsLog,msgTimer=0;
+let closing=0,doorsOpen=true,lastFlag=false,curStop=0;   // door state: phases are dwell (doors open), arrived (stopped, doors shut), run, end
 
 function resetGame(){
-  s=STATIONS[0].target;v=0;setSpeed=0;phase='dwell';dwell=5;next=1;score=0;elapsed=0;ended=false;stopsLog=[];pipDone=false;approachDone={};
+  s=STATIONS[0].target;v=0;setSpeed=0;phase='dwell';dwell=5;next=1;score=0;elapsed=0;ended=false;stopsLog=[];pipDone=false;approachDone={};closing=0;doorsOpen=true;lastFlag=false;curStop=0;
   $('end').style.display='none';
   STATIONS.forEach((st,i)=>{const e=$('st'+i);if(e)e.classList.toggle('done',i===0);});
-  showMsg('Welcome aboard. Doors are open at '+STATIONS[0].name+'.','',4500);
+  showMsg('Welcome aboard. Doors are open at '+STATIONS[0].name+' - press D to close them when boarding is done.','',6000);
 }
 // route bar
 {
@@ -660,11 +688,28 @@ function tone(freq,at0,dur,vol){
 }
 const chimeOpen=()=>{tone(880,0,.5,.2);tone(660,.38,.8,.2);};            // ding-dong as the doors open
 const chimeClose=()=>{tone(1100,0,.14,.14);tone(1100,.28,.14,.14);tone(1100,.56,.14,.14);};  // door-closing pips
-const chimeAnn=()=>{tone(659,0,.35,.16);tone(523,.3,.35,.16);tone(784,.6,.55,.16);};         // announcement jingle
+const chimeAnn=()=>{                                                                           // announcement jingle (differs per line)
+  if(AIRLINK){tone(988,0,.3,.15);tone(784,.25,.3,.15);tone(988,.5,.3,.15);tone(1319,.75,.6,.15);}
+  else{tone(659,0,.35,.16);tone(523,.3,.35,.16);tone(784,.6,.55,.16);}
+};
+/* each line has its own announcer: Aqua a lighter UK voice, Airlink a deeper voice */
+function pickVoice(){
+  const vs=speechSynthesis.getVoices().filter(x=>/^en/i.test(x.lang));
+  if(!vs.length)return null;
+  const gb=vs.filter(x=>/en-GB/i.test(x.lang)),pool=gb.concat(vs.filter(x=>!gb.includes(x)));
+  const female=/female|zira|hazel|susan|samantha|serena|libby|sonia|karen|moira|fiona|tessa|heera/i;
+  const male=/\bmale\b|david|george|mark|daniel|guy|ryan|james|alex|fred|thomas|oliver|arthur|rishi/i;
+  const hit=pool.find(x=>(AIRLINK?male:female).test(x.name));
+  return hit||(AIRLINK?(pool[1]||pool[0]):pool[0]);
+}
 function speak(text){
   if(muted||!('speechSynthesis' in window))return;
-  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='en-GB';u.rate=0.95;
-    const v=speechSynthesis.getVoices().find(x=>/en-GB/i.test(x.lang));if(v)u.voice=v;speechSynthesis.speak(u);}catch(e){}
+  try{
+    speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='en-GB';
+    u.pitch=AIRLINK?0.7:1.15;u.rate=AIRLINK?1.05:0.95;
+    const vo=pickVoice();if(vo)u.voice=vo;
+    speechSynthesis.speak(u);
+  }catch(e){}
 }
 function announce(text){if(!actx)return;chimeAnn();setTimeout(()=>speak(text),1300);}
 
@@ -716,6 +761,7 @@ addEventListener('keydown',e=>{
   if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();
   keys[e.code]=true;
   if(e.repeat)return;
+  if(e.code==='KeyD')pressDoor();
   if(e.code==='KeyC')camMode=camMode==='cab'?'chase':'cab';
   if(e.code==='KeyT'){const o=['day','dusk','night'];setEnv(o[(o.indexOf(CFG.time)+1)%3]);showMsg('Time of day: '+CFG.time,'',1500);}
   if(e.code==='KeyY'){const o=['clear','rain','fog'];setEnv(null,o[(o.indexOf(CFG.weather)+1)%3]);showMsg('Weather: '+CFG.weather,'',1500);}
@@ -739,11 +785,27 @@ function finish(missed){
   $('endtable').innerHTML=stopsLog.map(r=>'<tr><td>'+r.name+'</td><td>'+r.note+'</td><td style="text-align:right">'+r.pts+'</td></tr>').join('');
   setTimeout(()=>{ if(ended)$('end').style.display='flex'; },1800);
 }
+/* doors are operated by the driver: D opens them at a platform, and closes them once boarding is done */
+function pressDoor(){
+  if(!started||paused)return;
+  if(phase==='arrived'){
+    const st=STATIONS[curStop];
+    phase='dwell';doorsOpen=true;closing=0;dwell=lastFlag?2:6;chimeOpen();showMsg('Doors open','',1500);
+    const extra=/Terminal/.test(st.name)?' Passengers for departing flights, please check the information screens.':'';
+    setTimeout(()=>speak(lastFlag?'This train terminates here, at '+st.name+'. All change please. Thank you for travelling on '+LINE.name+'.':'Welcome to '+st.name+'. Please mind the gap between the train and the platform.'+extra),1500);
+    if(lastFlag)finish(false);
+  }else if(phase==='dwell'&&closing===0){
+    if(dwell>0){showMsg('Passengers are still boarding...','',1800);return;}
+    closing=1.6;chimeClose();showMsg('Doors closing...','',1200);
+  }else if(phase==='run'){
+    showMsg('Doors can only be opened when stopped at a platform','bad',2200);
+  }
+}
 function step(dt){
   elapsed+=(phase==='end')?0:dt;
   // set-speed control: W raises the set speed, S lowers it, the train follows it
   const emerg=!!keys.Space;
-  if(phase==='dwell'||phase==='end'){setSpeed=0;v=0;}
+  if(phase==='dwell'||phase==='arrived'||phase==='end'){setSpeed=0;v=0;}
   else{
     if(keys.KeyW||keys.ArrowUp) setSpeed=Math.min(MAX_SET,setSpeed+SET_RATE*dt);
     if(keys.KeyS||keys.ArrowDown) setSpeed=Math.max(0,setSpeed-SET_RATE*dt);
@@ -758,11 +820,15 @@ function step(dt){
   if(s>L-9){s=L-9;if(v>1.5){score-=300;showMsg('Hit the buffers!','bad',3000);}v=0;setSpeed=0;}
 
   if(phase==='dwell'){
-    dwell-=dt;
-    if(dwell<=1.4&&!pipDone){pipDone=true;chimeClose();}
-    if(dwell<=0){
-      phase='run';showMsg('Doors closed - ready to depart (hold W)','good',3000);
-      announce('This is the '+LINE.short+' to '+STATIONS[STATIONS.length-1].name+'. The next station is '+STATIONS[next].name+'.');
+    if(closing>0){
+      closing-=dt;
+      if(closing<=0){
+        closing=0;doorsOpen=false;phase='run';showMsg('Doors closed - ready to depart (hold W)','good',3000);
+        announce('This is the '+LINE.short+' to '+STATIONS[STATIONS.length-1].name+'. The next station is '+STATIONS[next].name+'.');
+      }
+    }else if(dwell>0){
+      dwell-=dt;
+      if(dwell<=0){dwell=0;showMsg('Boarding complete - press D to close the doors','good',4000);}
     }
   } else if(phase==='run'&&next<STATIONS.length){
     const st=STATIONS[next],stopped=v<0.05&&setSpeed===0;
@@ -771,11 +837,8 @@ function step(dt){
       const err=st.target-s,pts=Math.round(clamp(1000-Math.abs(err)*45,100,1000));
       score+=pts;stopsLog.push({name:st.name,note:(err>=0?err.toFixed(1)+' m short':Math.abs(err).toFixed(1)+' m over')+(Math.abs(err)<2?'  - perfect!':''),pts});
       $('st'+next).classList.add('done');
-      showMsg(st.name+(Math.abs(err)<2?' - perfect stop! +':' - stopped. +')+pts,'good',3500);
-      chimeOpen();
-      const lastStop=next===STATIONS.length-1;
-      setTimeout(()=>speak(lastStop?'This train terminates here, at '+st.name+'. All change please. Thank you for travelling on '+LINE.name+'.':'Welcome to '+st.name+'. Please mind the gap between the train and the platform.'),1500);
-      if(lastStop){finish(false);} else{phase='dwell';dwell=6;pipDone=false;next++;}
+      showMsg(st.name+(Math.abs(err)<2?' - perfect stop! +':' - stopped. +')+pts+'  Press D to open the doors','good',5000);
+      lastFlag=next===STATIONS.length-1;curStop=next;phase='arrived';next++;
     } else if(s>st.target+6){
       score-=300;stopsLog.push({name:st.name,note:'overshot the platform',pts:-300});
       showMsg('Overshot '+st.name+'! -300','bad',3500);
@@ -788,8 +851,11 @@ function step(dt){
   $('setspd').textContent=Math.round(setSpeed*MPH);
   $('setfill').style.height=(setSpeed/MAX_SET*100)+'%';
   $('setfill').style.background=emerg?'#ff5a4d':'';
-  const open=phase==='dwell';
-  $('doortxt').textContent=open?'OPEN':'CLOSED';$('doorlight').classList.toggle('on',open);
+  $('doortxt').textContent=closing>0?'CLOSING':doorsOpen?'OPEN':'CLOSED';$('doorlight').classList.toggle('on',doorsOpen);
+  let hint='';
+  if(phase==='arrived')hint='Press D to open';
+  else if(phase==='dwell'&&closing===0)hint=dwell>0?'Boarding '+Math.ceil(dwell)+'s':'Press D to close';
+  $('doorhint').textContent=hint;$('doors').classList.toggle('pulse',hint.startsWith('Press'));
   $('score').textContent=Math.max(0,Math.round(score));$('time').textContent=fmtTime(elapsed);
   if(next<STATIONS.length){
     const st=STATIONS[next];$('nextname').textContent=st.name;
