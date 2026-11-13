@@ -170,7 +170,7 @@
     <div class="opts">
       <label>Role <select id="selRole"><option value="driver">Train driver</option><option value="dispatcher">Dispatcher</option></select></label>
       <label id="lblStation" class="hidden">Station <select id="selStation"></select></label>
-      <label id="lblLine">Line <select id="selLine"><option value="aqua">Sebford Aqua</option><option value="airlink">Sebford Airlink</option></select></label>
+      <label id="lblLine">Line <select id="selLine"><option value="aqua">Sebford Aqua</option><option value="airlink">Sebford Airlink</option><option value="metro">Sebford Metro</option></select></label>
       <label id="lblDir">Direction <select id="selRoute"></select></label>
       <label>Time <select id="selTime"><option value="day">Day</option><option value="dusk">Dusk</option><option value="night">Night</option></select></label>
       <label>Weather <select id="selWeather"><option value="clear">Clear</option><option value="rain">Rain</option><option value="fog">Fog</option></select></label>
@@ -195,10 +195,7 @@
  *  SEBFORD AQUA  -  route + helpers
  * ------------------------------------------------------------------ */
 const MPH = 2.23694, BASE_LIMIT = 26.8;           // 60 mph
-const TRAIN_CARS = 4, CAR_LEN = 19, CAR_GAP = 1;
-const TRAIN_LEN = TRAIN_CARS * CAR_LEN + (TRAIN_CARS - 1) * CAR_GAP;
-const PLAT_HALF = 70;                              // platform half length
-const STOP_AHEAD = 60;                             // stop board is 60 m past station centre
+const CAR_GAP = 1;
 
 /* The lines have separate tracks. Aqua and Airlink run side by side (4 m apart) from Sebford Central to
    Westercoast, then split. Both networks are always built; the line you pick is the one you drive. */
@@ -217,7 +214,9 @@ function offsetRight(wps,d){   // shift a waypoint list sideways (right of trave
 const LINES = {
   aqua: {
     id:'aqua', name:'Sebford Aqua', first:'Sebford', second:'Aqua', short:'Aqua line service',
-    color:'#00b4c0', colorHex:0x00b4c0, maxSet:31.3, side:-1,      // side: platforms on the left when running outbound
+    color:'#00b4c0', colorHex:0x00b4c0, maxSet:31.3, side:-1,
+    cars:4, carLen:19, platHalf:70, stopAhead:60, platH:1.0, eye:2.95,
+    stand:{ahead:55,off:4.2,poMin:2.5,poMax:7.2,walk:66,eyeY:2.7},      // side: platforms on the left when running outbound
     wp: AQUA_SHARED.concat([
       [250,1110],[150,1110],[0,1120],[-150,1200],[-250,1350],[-280,1500],
       [-230,1650],[-100,1780],[100,1850],[150,1870],[300,1990],[450,2050],[550,2050],[650,2050],
@@ -230,7 +229,9 @@ const LINES = {
   },
   airlink: {
     id:'airlink', name:'Sebford Airlink', first:'Sebford', second:'Airlink', short:'Airlink service',
-    color:'#f5821f', colorHex:0xf5821f, maxSet:35.8, side:1,       // platforms on the right when running outbound
+    color:'#f5821f', colorHex:0xf5821f, maxSet:35.8, side:1,
+    cars:4, carLen:19, platHalf:70, stopAhead:60, platH:1.0, eye:2.95,
+    stand:{ahead:55,off:4.2,poMin:2.5,poMax:7.2,walk:66,eyeY:2.7},       // platforms on the right when running outbound
     wp: offsetRight(AQUA_SHARED,4).concat([
       [250,1106],[150,1106],[0,1108],[-200,1106],[-400,1104],[-600,1104],[-800,1120],[-950,1160],
       [-1070,1240],[-1150,1360],[-1190,1480],[-1190,1600],[-1190,1740],[-1185,1900],
@@ -243,13 +244,30 @@ const LINES = {
       { name:'Airport Plaza',   wp:[-450,2900] },
       { name:'Terminal 1',      wp:[50,2900] },
       { name:'Terminal 2',      wp:[550,2900] }]
+  },
+  metro: {
+    id:'metro', name:'Sebford Metro', first:'Sebford', second:'Metro', short:'Metro tram service',
+    color:'#7b5cff', colorHex:0x7b5cff, maxSet:16, side:1, tram:true,
+    cars:2, carLen:13, platHalf:18, stopAhead:17, platH:0.3, eye:2.1,
+    stand:{ahead:17,off:2.9,poMin:1.7,poMax:4.0,walk:15,eyeY:2.0},
+    wp:[[-250,520],[-175,520],[-100,520],[0,520],[200,520],[400,520],[600,545],[780,590],[870,620],[950,620],[1030,620],
+        [1110,620],[1180,620],[1250,620],[1450,615],[1650,580],[1750,560],[1850,570],[2000,630],[2100,675],[2150,680],
+        [2250,700],[2380,780],[2470,900],[2500,950],[2530,1000],[2640,1100],[2750,1230],[2800,1300],[2850,1350],[2900,1380]],
+    stops:[
+      { name:'Sebford Wharf Road', wp:[-100,520] },
+      { name:'Financial Quarter',  wp:[950,620] },
+      { name:'Marsden Crossing',   wp:[1110,620] },
+      { name:'Old Road',           wp:[1750,560] },
+      { name:'Bars Creek',         wp:[2150,680] },
+      { name:'Newtown',            wp:[2500,950] },
+      { name:'Low Row',            wp:[2800,1300] }]
   }
 };
 
 /* settings come from the URL so line / route / time / weather survive a reload */
 const Q=new URLSearchParams(location.search);
 const CFG={
-  line:Q.get('line')==='airlink'?'airlink':'aqua',
+  line:['aqua','airlink','metro'].includes(Q.get('line'))?Q.get('line'):'aqua',
   route:Q.get('route')==='return'?'return':'out',
   time:['day','dusk','night'].includes(Q.get('time'))?Q.get('time'):'day',
   weather:['clear','rain','fog'].includes(Q.get('weather'))?Q.get('weather'):'clear',
@@ -259,6 +277,7 @@ const CFG={
 const ROLE=CFG.role;
 if(ROLE==='dispatcher')document.body.classList.add('disp');
 const LINE=LINES[CFG.line], AIRLINK=CFG.line==='airlink';
+const TRAIN_CARS=LINE.cars, CAR_LEN=LINE.carLen, PLAT_HALF=LINE.platHalf, STOP_AHEAD=LINE.stopAhead;   // the line you drive
 const WAYPOINTS=LINE.wp.map(p=>p.slice());
 const STATIONS=LINE.stops.map(x=>Object.assign({},x));
 const REVERSE=CFG.route==='return';
@@ -298,9 +317,10 @@ function makePath(wps){
   function railPt(s,off){const p=at(s);return {x:p.x-p.tz*off,z:p.z+p.tx*off,tx:p.tx,tz:p.tz};}   // off: right-positive
   return {Px,Pz,L,Tx,Tz,YAW,at,railPt};
 }
-const OUT={aqua:makePath(LINES.aqua.wp),airlink:makePath(LINES.airlink.wp)};   // both networks, outbound direction
-for(const id of ['aqua','airlink']){
-  const P=OUT[id];P.id=id;P.side=LINES[id].side;P.cen=nearestIdx(P,0,0);
+const LINE_IDS=['aqua','airlink','metro'];
+const OUT={};for(const id of LINE_IDS)OUT[id]=makePath(LINES[id].wp);   // every network, outbound direction
+for(const id of LINE_IDS){
+  const P=OUT[id];P.id=id;P.side=LINES[id].side;P.cen=LINES[id].tram?-1e9:nearestIdx(P,0,0);
   P.stops=LINES[id].stops.map(x=>Object.assign({},x,{s:nearestIdx(P,x.wp[0],x.wp[1])}));
 }
 const P0=REVERSE?makePath(WAYPOINTS):OUT[CFG.line];     // the path you drive (reversed on the return run)
@@ -311,7 +331,7 @@ STATIONS.forEach(st=>{st.s=nearestIdx(P0,st.wp[0],st.wp[1]);st.target=st.s+STOP_
 
 /* ---- spatial hash of both tracks so scenery stays clear of them ---- */
 const CELL=25,grid=new Map();
-for(const id of ['aqua','airlink']){
+for(const id of LINE_IDS){
   const P=OUT[id];
   for(let i=0;i<=P.L;i+=4){const key=Math.floor(P.Px[i]/CELL)+','+Math.floor(P.Pz[i]/CELL);(grid.get(key)||grid.set(key,[]).get(key)).push(P.Px[i],P.Pz[i]);}
 }
@@ -368,48 +388,58 @@ flatRect(SEA,-0.05,lam(0x2f86c4));
 flatRect(BEACH,-0.15,lam(0xe6d6a2));
 flatRect(DOCKWATER,-0.05,lam(0x2a5d7e));flatRect(QUAY,-0.12,lam(0x8d9296));
 
-/* ---- track: each line has its own track ---- */
+/* ---- track: each line has its own track (the Metro is a street-running tram on a road) ---- */
 const railMat=lam(0xa9acb0),sleeperMat=lam(0x6b5a4a),mastMat=lam(0x5a6168);
 const ballastMat=new THREE.MeshLambertMaterial({color:0x8a8780,side:THREE.DoubleSide});
+const roadMat=new THREE.MeshLambertMaterial({color:0x44464b,side:THREE.DoubleSide});
+const pavementMat=new THREE.MeshLambertMaterial({color:0xb9b6ae,side:THREE.DoubleSide});
 function buildTrack(P){
-  const {Px,Pz,L,at}=P,dummy=new THREE.Object3D();
-  const rails=new THREE.InstancedMesh(new THREE.BoxGeometry(0.09,0.17,1),railMat,L*2);
+  const {Px,Pz,L,at}=P,dummy=new THREE.Object3D(),tram=!!LINES[P.id].tram;
+  const rails=new THREE.InstancedMesh(new THREE.BoxGeometry(tram?0.12:0.09,tram?0.07:0.17,1),railMat,L*2);
   let n=0;
   for(let i=0;i<L;i++){
     const dx=Px[i+1]-Px[i],dz=Pz[i+1]-Pz[i],len=Math.hypot(dx,dz),rx=-dz/len,rz=dx/len;
     for(const sd of [-0.7175,0.7175]){
-      dummy.position.set((Px[i]+Px[i+1])/2+rx*sd,0.285,(Pz[i]+Pz[i+1])/2+rz*sd);
+      dummy.position.set((Px[i]+Px[i+1])/2+rx*sd,tram?0.115:0.285,(Pz[i]+Pz[i+1])/2+rz*sd);
       dummy.rotation.set(0,Math.atan2(dx,dz),0);dummy.scale.set(1,1,len*1.03);dummy.updateMatrix();rails.setMatrixAt(n++,dummy.matrix);
     }
   }
   scene.add(rails);
-  const sc=Math.floor(L/0.72),sleepers=new THREE.InstancedMesh(new THREE.BoxGeometry(2.6,0.15,0.28),sleeperMat,sc);
-  for(let i=0;i<sc;i++){
-    const p=at(i*0.72);dummy.position.set(p.x,0.125,p.z);dummy.rotation.set(0,Math.atan2(p.tx,p.tz),0);dummy.scale.set(1,1,1);dummy.updateMatrix();sleepers.setMatrixAt(i,dummy.matrix);
+  if(!tram){
+    const sc=Math.floor(L/0.72),sleepers=new THREE.InstancedMesh(new THREE.BoxGeometry(2.6,0.15,0.28),sleeperMat,sc);
+    for(let i=0;i<sc;i++){
+      const p=at(i*0.72);dummy.position.set(p.x,0.125,p.z);dummy.rotation.set(0,Math.atan2(p.tx,p.tz),0);dummy.scale.set(1,1,1);dummy.updateMatrix();sleepers.setMatrixAt(i,dummy.matrix);
+    }
+    scene.add(sleepers);
   }
-  scene.add(sleepers);
-  const pos=[],idx=[];let v=0;
-  for(let s=0;s<=L-2;s+=2){
-    const p=at(s),rx=-p.tz,rz=p.tx;
-    pos.push(p.x-rx*1.95,0.1,p.z-rz*1.95, p.x+rx*1.95,0.1,p.z+rz*1.95);
-    if(v>0){idx.push(v-2,v-1,v,v-1,v+1,v);}
-    v+=2;
-  }
-  const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
-  scene.add(new THREE.Mesh(bg,ballastMat));
+  // ballast (rail) or road surface + pavements (tram)
+  const strip=(w0,w1,y,mat)=>{
+    const pos=[],idx=[];let v=0;
+    for(let s=0;s<=L-2;s+=2){
+      const p=at(s),rx=-p.tz,rz=p.tx;
+      pos.push(p.x+rx*w0,y,p.z+rz*w0, p.x+rx*w1,y,p.z+rz*w1);
+      if(v>0){idx.push(v-2,v-1,v,v-1,v+1,v);}
+      v+=2;
+    }
+    const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));bg.setIndex(idx);
+    scene.add(new THREE.Mesh(bg,mat));
+  };
+  if(tram){strip(-4.6,4.6,0.08,roadMat);strip(-6.6,-4.6,0.13,pavementMat);strip(4.6,6.6,0.13,pavementMat);}
+  else strip(-1.95,1.95,0.1,ballastMat);
   // overhead masts on the side away from the platforms (skipped inside the Central trainshed) + the wire
-  const count=Math.floor(L/50),masts=new THREE.InstancedMesh(new THREE.BoxGeometry(0.28,6.6,0.28),mastMat,count+1),wire=[];
+  const spacing=tram?35:50,count=Math.floor(L/spacing),masts=new THREE.InstancedMesh(new THREE.BoxGeometry(0.28,tram?6.2:6.6,0.28),mastMat,count+1),wire=[];
+  const mastOff=tram?5.6:2.9,wireY=tram?5.4:5.7;
   n=0;
   for(let k=0;k<=count;k++){
-    const s=k*50+10;if(s>P.cen-165&&s<P.cen+85)continue;
-    const p=P.railPt(s,-P.side*2.9);dummy.position.set(p.x,3.3,p.z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
+    const s=k*spacing+10;if(s>P.cen-165&&s<P.cen+85)continue;
+    const p=P.railPt(s,-P.side*mastOff);dummy.position.set(p.x,tram?3.1:3.3,p.z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
   }
   masts.count=n;scene.add(masts);
-  for(let s=0;s<L-6;s+=5){if(s>P.cen-165&&s<P.cen+85)continue;const a=at(s),b=at(s+5);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
+  for(let s=0;s<L-6;s+=5){if(s>P.cen-165&&s<P.cen+85)continue;const a=at(s),b=at(s+5);wire.push(a.x,wireY,a.z,b.x,wireY,b.z);}
   const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
   scene.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0x2d3338})));
 }
-buildTrack(OUT.aqua);buildTrack(OUT.airlink);
+for(const id of LINE_IDS)buildTrack(OUT[id]);
 
 /* ---- canvas label textures ---- */
 function labelTex(text,bg,fg,w,h){
@@ -445,10 +475,27 @@ function pathKit(P,side){
   };
   return {pt,put,putPlane};
 }
+/* a low tram stop: kerb-height platform, glass shelter, bench and a name pole */
+const matShelterGlass=new THREE.MeshLambertMaterial({color:0x9cc8dd,transparent:true,opacity:0.4,side:THREE.DoubleSide});
+function tramStop(P,st,kit,color){
+  const {pt,put,putPlane}=kit,cfg=LINES[P.id],h=cfg.platH,a=Math.max(1,st.s-cfg.platHalf),b=Math.min(P.L-2,st.s+cfg.platHalf);
+  ribbon(a,b,2,s=>[...pt(s,1.35,h),...pt(s,4.3,h)],matPlat);
+  ribbon(a,b,2,s=>[...pt(s,1.35,0),...pt(s,1.35,h)],matPlat);
+  ribbon(a,b,2,s=>[...pt(s,4.3,0),...pt(s,4.3,h)],matPlat);
+  ribbon(a,b,2,s=>[...pt(s,1.45,h+0.01),...pt(s,1.7,h+0.01)],matYellow);
+  ribbon(st.s-7,st.s+7,2,s=>[...pt(s,2.2,3.1),...pt(s,4.3,3.1)],matRoof);        // shelter roof
+  for(const z of [-7,7])put(0.15,2.8,0.15,matPost,st.s+z,4.15,h+1.4);
+  put(0.05,2.2,14,matShelterGlass,st.s,4.25,h+1.2);
+  put(0.5,0.1,3,lam(0x6b4a2b),st.s+1,3.8,h+0.5);
+  put(0.5,0.1,1.2,matLamp,st.s,3.2,3.0);
+  put(0.12,3.6,0.12,matPost,st.s-10,3.9,h+1.8);                                   // stop pole with the name sign
+  putPlane(new THREE.PlaneGeometry(2.4,0.75),new THREE.MeshBasicMaterial({map:labelTex(st.name,color,'#ffffff',512,160),side:THREE.DoubleSide}),st.s-10,3.9,h+3.4,P.side*Math.PI/2);
+}
 function buildPlatforms(P){
-  const {pt,put,putPlane}=pathKit(P,P.side),signGeo=new THREE.PlaneGeometry(6,1.5),color=LINES[P.id].color;
+  const kit=pathKit(P,P.side),{pt,put,putPlane}=kit,signGeo=new THREE.PlaneGeometry(6,1.5),color=LINES[P.id].color,cfg=LINES[P.id];
   P.stops.forEach(st=>{
-    const a=Math.max(1,st.s-PLAT_HALF),b=Math.min(P.L-2,st.s+PLAT_HALF);
+    if(cfg.tram){tramStop(P,st,kit,color);return;}
+    const a=Math.max(1,st.s-cfg.platHalf),b=Math.min(P.L-2,st.s+cfg.platHalf);
     ribbon(a,b,2,s=>[...pt(s,1.7,1.0),...pt(s,7.7,1.0)],matPlat);          // top
     ribbon(a,b,2,s=>[...pt(s,1.7,0),...pt(s,1.7,1.0)],matPlat);            // edge walls
     ribbon(a,b,2,s=>[...pt(s,7.7,0),...pt(s,7.7,1.0)],matPlat);
@@ -466,13 +513,13 @@ function buildPlatforms(P){
     put(10.6,0.5,34.6,lam(0x6a4a3a),st.s-8,13.5,5.2);
   });
 }
-buildPlatforms(OUT.aqua);buildPlatforms(OUT.airlink);
+for(const id of LINE_IDS)buildPlatforms(OUT[id]);
 /* stop boards for the line you are driving, on the platform side for your direction of travel */
 {
   const {put,putPlane}=pathKit(P0,PSIDE),stopTex=labelTex('STOP  4 CAR','#c8102e','#ffffff',256,96),g=new THREE.PlaneGeometry(2.4,0.9);
   STATIONS.forEach(st=>{
-    put(0.15,2.4,0.15,matPost,st.s+STOP_AHEAD+2,3.1,2.2);
-    putPlane(g,new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}),st.s+STOP_AHEAD+2,3.1,2.9,Math.PI);
+    put(0.15,2.4,0.15,matPost,st.s+STOP_AHEAD+2,3.1,LINE.platH+1.2);
+    putPlane(g,new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}),st.s+STOP_AHEAD+2,3.1,LINE.platH+1.9,Math.PI);
   });
 }
 /* Sebford Central: one trainshed over both tracks + terminus wall (outbound frame, Aqua track at x=0, Airlink 4 m to the right) */
@@ -485,7 +532,7 @@ buildPlatforms(OUT.aqua);buildPlatforms(OUT.airlink);
   box(34,16,3,lam(0x8c7a62),cx,8,-153,f);
 }
 /* buffer stops at both ends of every track */
-for(const id of ['aqua','airlink'])for(const [s0,dir] of [[1,-1],[OUT[id].L-1,1]]){
+for(const id of LINE_IDS)for(const [s0,dir] of [[1,-1],[OUT[id].L-1,1]]){
   const p=OUT[id].at(s0),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
   box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,dir*1,b);box(0.3,1.6,0.3,matPost,-1.2,0.8,dir*1.6,b);box(0.3,1.6,0.3,matPost,1.2,0.8,dir*1.6,b);
 }
@@ -506,10 +553,10 @@ const BMATS=TINTS.map(t=>{
   const [m,e]=winTex(t),w=new THREE.MeshLambertMaterial({map:m,emissive:0xffffff,emissiveMap:e,emissiveIntensity:0}),r=lam(0x7d858b);
   ENV_WIN.push(w);return [w,w,r,r,w,w];
 });
-function addBuilding(x,z,w,d,h,mats,parent){
+function addBuilding(x,z,w,d,h,mats,parent,yaw){
   const geo=new THREE.BoxGeometry(w,h,d),uv=geo.attributes.uv;
   for(let i=0;i<24;i++){let su=1,sv=1;if(i<8){su=d/16;sv=h/16;}else if(i>=16){su=w/16;sv=h/16;}uv.setXY(i,uv.getX(i)*su,uv.getY(i)*sv);}
-  const m=new THREE.Mesh(geo,mats);m.position.set(x,h/2,z);(parent||scene).add(m);return m;
+  const m=new THREE.Mesh(geo,mats);m.position.set(x,h/2,z);if(yaw)m.rotation.y=yaw;(parent||scene).add(m);return m;
 }
 const FQ_ZONE=[650,1420,200,800], CENTRAL_ZONE=[-190,520,-230,230];
 const AIRPORT_ZONE=[-1500,1100,2930,3400];
@@ -658,15 +705,85 @@ function updateFlyer(){
   flyer.rotation.set(-(lift>0?0.22:0),Math.PI/2,0);
 }
 
+/* ---- Metro scenery: a tram through the city to the eastern suburbs ---- */
+const noTreeCircles=[];     // {x,z,r} places trees must keep out of
+{
+  const M=OUT.metro,ms=M.stops,sOf=n=>ms.find(x=>x.name===n).s;
+  // keep street buildings away from the heavy-rail lines where the tram crosses them
+  const railSamples=[];
+  for(const id of ['aqua','airlink']){const P=OUT[id];for(let i=0;i<=P.L;i+=3){const x=P.Px[i],z=P.Pz[i];if(x>800&&x<1220&&z>300&&z<900)railSamples.push(x,z);}}
+  const nearRail=(x,z,r)=>{for(let k=0;k<railSamples.length;k+=2)if((railSamples[k]-x)**2+(railSamples[k+1]-z)**2<r*r)return true;return false;};
+  const brick=[lam(0xb5654a),lam(0xa5543c),lam(0xc9a27a),lam(0x9c6b55),lam(0xd9c8a8),lam(0x8a5a48)],slab=lam(0x555a60),chimney=lam(0x6b3b2e);
+  const grey=[lam(0x7e8fa0),lam(0x8d99a4),lam(0x9a8f84)];
+  function row(s0,s1,step,offs,make){
+    for(let s=Math.max(2,s0);s<=Math.min(M.L-3,s1);s+=step)for(const off of offs){
+      const p=M.railPt(s,off);
+      if(inRect(p.x,p.z,[-800,470,545,1100])||inRect(p.x,p.z,FQ_ZONE)||inRect(p.x,p.z,CENTRAL_ZONE)||nearRail(p.x,p.z,42))continue;     // not in the sea / beside the main lines
+      make(p,Math.atan2(p.tx,p.tz),s,off);
+      noTreeCircles.push({x:p.x,z:p.z,r:13});
+    }
+  }
+  function house(p,yaw,w,d,h,mat){   // terraced house: w across the street, d along it
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(p.x,h/2,p.z);m.rotation.y=yaw;scene.add(m);
+    const r=new THREE.Mesh(new THREE.BoxGeometry(w+0.4,0.5,d+0.1),slab);r.position.set(p.x,h+0.25,p.z);r.rotation.y=yaw;scene.add(r);
+    if(rnd()<0.6){const c=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.6,0.9),chimney);c.position.set(p.x+Math.cos(yaw)*w*0.25,h+1.2,p.z-Math.sin(yaw)*w*0.25);c.rotation.y=yaw;scene.add(c);}
+  }
+  const terrace=(p,yaw,s,off)=>house(p,yaw,9.5,6.6,rr(6.5,8.5),brick[Math.floor(rnd()*brick.length)]);
+  const midrise=(lo,hi)=>(p,yaw)=>addBuilding(p.x,p.z,rr(16,24),rr(16,24),rr(lo,hi),BMATS[Math.floor(rnd()*BMATS.length)],undefined,yaw);
+  const warehouse=(p,yaw)=>{const h=rr(8,11),m=new THREE.Mesh(new THREE.BoxGeometry(18,h,28),grey[Math.floor(rnd()*3)]);m.position.set(p.x,h/2,p.z);m.rotation.y=yaw;scene.add(m);
+    const r=new THREE.Mesh(new THREE.BoxGeometry(18.6,0.8,28.6),lam(0x4d5b68));r.position.set(p.x,h+0.4,p.z);r.rotation.y=yaw;scene.add(r);};
+  const wharf=sOf('Sebford Wharf Road'),fq=sOf('Financial Quarter'),mars=sOf('Marsden Crossing'),old=sOf('Old Road'),bars=sOf('Bars Creek'),newt=sOf('Newtown'),low=sOf('Low Row');
+  // Wharf Road: warehouses along the road, a quay on the north shore with boats and a crane
+  row(wharf-140,wharf+360,34,[-18],warehouse);
+  flatRect([-420,420,538,552],-0.1,lam(0x8d9296));
+  for(const [x,z,len,col] of [[-310,578,16,0x2c6fbb],[-210,590,12,0xc0392b],[-60,574,18,0x2e8b57],[90,586,13,0xe0a21b],[220,576,15,0xdadada]]){
+    box(len,1.8,4.4,lam(col),x,0.1,z,scene);box(len*0.4,1.8,3.2,lam(0xf2f2f2),x-len*0.1,1.9,z,scene);
+  }
+  box(1.5,22,1.5,lam(0xd9442a),-120,11,545,scene);box(1.2,1.2,22,lam(0xd9442a),-120,22,555,scene);
+  // office buildings between the harbour and the financial quarter
+  row(wharf+420,fq-330,48,[-26,26],midrise(12,30));
+  // Marsden Crossing: shops either side of the junction, and the level crossing with the main line
+  row(mars-40,mars+130,32,[-20,20],midrise(12,22));
+  row(mars+200,old-190,60,[-22,22],midrise(8,16));
+  {
+    const A=OUT.aqua,sa=nearestIdx(A,1010,620),pa=A.at(sa),g=new THREE.Group();
+    g.position.set(pa.x,0,pa.z);g.rotation.y=Math.atan2(pa.tx,pa.tz);scene.add(g);
+    const red=new THREE.MeshBasicMaterial({color:0xff2a1a});
+    for(const x of [-9,7])for(const z of [-6.5,6.5]){
+      box(0.2,3.0,0.2,lam(0x57656d),x,1.5,z,g);box(0.5,0.5,0.2,red,x,3.0,z,g);
+      const arm=box(0.14,0.14,4,lam(z>0?0xf2f2f2:0xc0281e),x,3.3,z*0.97,g);arm.rotation.z=0.9*(x>0?-1:1);
+    }
+    box(18,0.2,9.4,lam(0x3a3c40),-1,0.14,0,g);          // crossing deck over both main-line tracks
+  }
+  // Old Road: long terraced streets
+  row(old-170,old+170,6.8,[-13.5,13.5],terrace);
+  row(old+200,bars-180,46,[-16,16],(p,yaw)=>house(p,yaw,10,9,rr(6,8),brick[Math.floor(rnd()*brick.length)]));
+  // Bars Creek: houses, then the creek under a tram bridge
+  row(bars-110,bars+60,7.2,[-13.5,13.5],terrace);
+  {
+    const cs=bars+120,p=M.at(cs),g=new THREE.Group(),yaw=Math.atan2(p.tx,p.tz);
+    g.position.set(p.x,0,p.z);g.rotation.y=yaw;scene.add(g);
+    box(260,0.12,16,lam(0x2f7fa8),0,-0.1,0,g);box(260,0.05,26,lam(0x9a8a64),0,-0.16,0,g);
+    for(const x of [-5.4,5.4])box(0.5,1.1,18,lam(0x8d9296),x,0.6,0,g);
+    for(let k=-120;k<=120;k+=20)noTreeCircles.push({x:p.x+Math.cos(yaw)*k,z:p.z-Math.sin(yaw)*k,r:17});
+  }
+  // Newtown: modern apartment blocks
+  row(newt-170,newt+170,40,[-26,26],midrise(22,44));
+  row(newt-170,newt+170,40,[-26,26].map(o=>o*1.9),midrise(8,18));
+  // Low Row: terraces right up to the end of the line
+  row(low-230,low-2,6.8,[-13.5,13.5],terrace);
+}
+
 /* ---- trees ---- */
 {
-  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),4500);
-  const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),4500);
-  const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),4500);
+  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),7000);
+  const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),7000);
+  const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),7000);
   const d=new THREE.Object3D();let a=0,b=0;
-  for(let i=0;i<18000&&a+b<4500;i++){
-    const x=rr(-1800,1550),z=rr(-550,3500);
+  for(let i=0;i<26000&&a+b<7000;i++){
+    const x=rr(-1800,3100),z=rr(-550,3500);
     if(nearTrack(x,z,14))continue;
+    if(noTreeCircles.some(c=>(c.x-x)**2+(c.z-z)**2<c.r*c.r))continue;
     let bad=false;for(const r of noTree)if(inRect(x,z,r)){bad=true;break;}if(bad)continue;
     const s=rr(0.8,1.5);
     d.position.set(x,1.5*s,z);d.scale.set(s,s,s);d.updateMatrix();trunk.setMatrixAt(a+b,d.matrix);
@@ -677,35 +794,50 @@ function updateFlyer(){
   // matrices for trunk were written with index a+b at time of placement -> consistent with total
 }
 
-/* ---- the train ---- */
-function makeTrain(colorHex){
+/* ---- trains ---- */
+function makeTrain(id){
+  const cfg=LINES[id],tram=!!cfg.tram,CL=cfg.carLen,N=cfg.cars;
   const train=new THREE.Group(),cars=[];scene.add(train);
-  const white=lam(0xf4f6f7),aqua=lam(colorHex),glass=lam(0x1b2a33),roof=lam(0x9aa3a8),dark=lam(0x25292c);
-  for(let c=0;c<TRAIN_CARS;c++){
+  const white=lam(0xf4f6f7),accent=lam(cfg.colorHex),glass=lam(0x1b2a33),roof=lam(0x9aa3a8),dark=lam(0x25292c);
+  const warm=new THREE.MeshBasicMaterial({color:0xfff6c8}),red=new THREE.MeshBasicMaterial({color:0xc4251c});
+  for(let c=0;c<N;c++){
     const g=new THREE.Group();
-    box(2.8,3.0,CAR_LEN,white,0,2.2,0,g);
-    box(2.84,0.9,CAR_LEN+0.02,aqua,0,1.35,0,g);
-    box(2.84,1.0,CAR_LEN-3,glass,0,2.85,0,g);
-    box(2.5,0.3,CAR_LEN-1,roof,0,3.85,0,g);
-    box(2.4,0.6,3,dark,0,0.55,6,g);box(2.4,0.6,3,dark,0,0.55,-6,g);
-    if(c===0){box(2.5,1.3,0.06,glass,0,2.9,CAR_LEN/2+0.01,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xfff6c8}),-0.9,1.5,CAR_LEN/2+0.02,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xfff6c8}),0.9,1.5,CAR_LEN/2+0.02,g);}
-    if(c===TRAIN_CARS-1){box(2.5,1.3,0.06,glass,0,2.9,-CAR_LEN/2-0.01,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xc4251c}),-0.9,1.5,-CAR_LEN/2-0.02,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xc4251c}),0.9,1.5,-CAR_LEN/2-0.02,g);}
+    if(tram){            // low-floor tram: body from 0.45 to 3.45 m, pantograph on the roof
+      box(2.4,3.0,CL,white,0,1.95,0,g);
+      box(2.44,0.8,CL+0.02,accent,0,0.95,0,g);
+      box(2.44,1.2,CL-2.5,glass,0,2.25,0,g);
+      box(2.2,0.25,CL-1,roof,0,3.55,0,g);
+      box(2.0,0.5,2.6,dark,0,0.4,CL*0.3,g);box(2.0,0.5,2.6,dark,0,0.4,-CL*0.3,g);
+      box(1.6,0.08,0.08,dark,0,4.45,0,g);box(0.08,0.9,0.08,dark,0.3,4.0,-0.5,g);box(0.08,0.9,0.08,dark,-0.3,4.0,0.5,g);
+      if(c===0){box(2.2,1.6,0.06,glass,0,2.3,CL/2+0.01,g);box(0.35,0.3,0.06,warm,-0.8,0.9,CL/2+0.02,g);box(0.35,0.3,0.06,warm,0.8,0.9,CL/2+0.02,g);}
+      if(c===N-1){box(2.2,1.6,0.06,glass,0,2.3,-CL/2-0.01,g);box(0.35,0.3,0.06,red,-0.8,0.9,-CL/2-0.02,g);box(0.35,0.3,0.06,red,0.8,0.9,-CL/2-0.02,g);}
+    }else{
+      box(2.8,3.0,CL,white,0,2.2,0,g);
+      box(2.84,0.9,CL+0.02,accent,0,1.35,0,g);
+      box(2.84,1.0,CL-3,glass,0,2.85,0,g);
+      box(2.5,0.3,CL-1,roof,0,3.85,0,g);
+      box(2.4,0.6,3,dark,0,0.55,6,g);box(2.4,0.6,3,dark,0,0.55,-6,g);
+      if(c===0){box(2.5,1.3,0.06,glass,0,2.9,CL/2+0.01,g);box(0.4,0.3,0.06,warm,-0.9,1.5,CL/2+0.02,g);box(0.4,0.3,0.06,warm,0.9,1.5,CL/2+0.02,g);}
+      if(c===N-1){box(2.5,1.3,0.06,glass,0,2.9,-CL/2-0.01,g);box(0.4,0.3,0.06,red,-0.9,1.5,-CL/2-0.02,g);box(0.4,0.3,0.06,red,0.9,1.5,-CL/2-0.02,g);}
+    }
     train.add(g);cars.push(g);
   }
-  return {group:train,cars};
+  return {group:train,cars,cfg};
 }
-const PT=makeTrain(LINE.colorHex),train=PT.group,cars=PT.cars;
+const PT=makeTrain(LINE.id),train=PT.group,cars=PT.cars;
 function placeCars(tr,P,c,dir){   // another train on path P: c = centre of the train along the path, dir = +1 / -1 direction of travel
-  for(let i=0;i<TRAIN_CARS;i++){
-    const sc=c+dir*(1.5-i)*(CAR_LEN+CAR_GAP),a=P.at(sc+dir*6),b=P.at(sc-dir*6);
+  const CL=tr.cfg.carLen,N=tr.cfg.cars,bog=CL*0.32;
+  for(let i=0;i<N;i++){
+    const sc=c+dir*((N-1)/2-i)*(CL+CAR_GAP),a=P.at(sc+dir*bog),b=P.at(sc-dir*bog);
     tr.cars[i].position.set((a.x+b.x)/2,0,(a.z+b.z)/2);
     tr.cars[i].rotation.y=Math.atan2(a.x-b.x,a.z-b.z);
   }
 }
 function placeTrain(s){
+  const bog=CAR_LEN*0.32;
   for(let c=0;c<TRAIN_CARS;c++){
     const sc=s-CAR_LEN/2-c*(CAR_LEN+CAR_GAP);
-    const a=at(sc+6),b=at(sc-6);
+    const a=at(sc+bog),b=at(sc-bog);
     cars[c].position.set((a.x+b.x)/2,0,(a.z+b.z)/2);
     cars[c].rotation.y=Math.atan2(a.x-b.x,a.z-b.z);
   }
@@ -783,6 +915,7 @@ const chimeOpen=()=>{tone(880,0,.5,.2);tone(660,.38,.8,.2);};            // ding
 const chimeClose=()=>{tone(1100,0,.14,.14);tone(1100,.28,.14,.14);tone(1100,.56,.14,.14);};  // door-closing pips
 const chimeAnn=()=>{                                                                           // announcement jingle (differs per line)
   if(AIRLINK){tone(988,0,.3,.15);tone(784,.25,.3,.15);tone(988,.5,.3,.15);tone(1319,.75,.6,.15);}
+  else if(LINE.id==='metro'){tone(1047,0,.16,.15);tone(1047,.22,.16,.15);tone(1568,.5,.4,.14);}
   else{tone(659,0,.35,.16);tone(523,.3,.35,.16);tone(784,.6,.55,.16);}
 };
 /* each line has its own announcer: Aqua a lighter UK voice, Airlink a deeper voice */
@@ -792,14 +925,14 @@ function pickVoice(){
   const gb=vs.filter(x=>/en-GB/i.test(x.lang)),pool=gb.concat(vs.filter(x=>!gb.includes(x)));
   const female=/female|zira|hazel|susan|samantha|serena|libby|sonia|karen|moira|fiona|tessa|heera/i;
   const male=/\bmale\b|david|george|mark|daniel|guy|ryan|james|alex|fred|thomas|oliver|arthur|rishi/i;
-  const hit=pool.find(x=>(AIRLINK?male:female).test(x.name));
+  const hit=LINE.id==='metro'?(pool.filter(x=>!female.test(x.name)&&!male.test(x.name))[0]||pool[2]||pool[0]):pool.find(x=>(AIRLINK?male:female).test(x.name));
   return hit||(AIRLINK?(pool[1]||pool[0]):pool[0]);
 }
 function speak(text){
   if(muted||!('speechSynthesis' in window))return;
   try{
     speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='en-GB';
-    u.pitch=AIRLINK?0.7:1.15;u.rate=AIRLINK?1.05:0.95;
+    u.pitch=AIRLINK?0.7:LINE.id==='metro'?0.95:1.15;u.rate=AIRLINK?1.05:LINE.id==='metro'?1.12:0.95;
     const vo=pickVoice();if(vo)u.voice=vo;
     speechSynthesis.speak(u);
   }catch(e){}
@@ -857,8 +990,8 @@ function updateRain(dt){
  * ================================================================== */
 const SHIFT_LEN=360;                                   // seconds per shift
 const REQ={whistle:'WHISTLE only',light:'GREEN LIGHT only',both:'WHISTLE + GREEN LIGHT'};
-const AI_CRUISE={aqua:24,airlink:30};
-const ALL_STATIONS=(()=>{const seen=[];for(const id of ['aqua','airlink'])for(const st of LINES[id].stops)if(!seen.includes(st.name))seen.push(st.name);return seen;})();
+const AI_CRUISE={aqua:24,airlink:30,metro:11};
+const ALL_STATIONS=(()=>{const seen=[];for(const id of LINE_IDS)for(const st of LINES[id].stops)if(!seen.includes(st.name))seen.push(st.name);return seen;})();
 const D={time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,mlook:0,alook:0,base:0,stand:{x:0,z:0},lines:[],name:'',log:[]};
 let aiTrains=[],blowTimer=0;
 
@@ -872,20 +1005,20 @@ function whistleSound(){
 }
 function resetDisp(){
   const name=ALL_STATIONS.includes(CFG.station)?CFG.station:'Sebford Central';
-  D.name=name;D.lines=['aqua','airlink'].filter(id=>OUT[id].stops.some(x=>x.name===name));
-  const P=OUT[D.lines[0]],st=P.stops.find(x=>x.name===name),sp=Math.min(P.L-3,st.s+55);
-  D.P=P;D.stS=st.s;D.ps=sp;D.po=4.2;D.yaw=P.YAW[sp];D.pitch=-0.04;D.mlook=0;   // stand near the end of the platform, looking back along the tracks
+  D.name=name;D.lines=LINE_IDS.filter(id=>OUT[id].stops.some(x=>x.name===name));
+  const P=OUT[D.lines[0]],st=P.stops.find(x=>x.name===name),cfg=LINES[D.lines[0]].stand,sp=Math.min(P.L-3,st.s+cfg.ahead);
+  D.cfg=cfg;D.P=P;D.stS=st.s;D.ps=sp;D.po=cfg.off;D.yaw=P.YAW[sp];D.pitch=-0.04;D.mlook=0;   // stand near the end of the platform, looking back along the tracks
   D.stand=P.railPt(D.ps,P.side*D.po);
   Object.assign(D,{time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,log:[]});
   for(const t of aiTrains)scene.remove(t.tr.group);
-  aiTrains=['aqua','airlink'].map((id,k)=>{
+  aiTrains=LINE_IDS.map((id,k)=>{
     const P=OUT[id],stops=P.stops,mi=stops.findIndex(x=>x.name===name);
     let idx,dir=1;
     if(mi>=0&&id===D.lines[0])idx=mi;                              // the first line starts with a train at your platform
     else if(mi>=0){if(mi+1<stops.length){idx=mi+1;dir=-1;}else{idx=mi-1;dir=1;}}
     else idx=Math.min(1,stops.length-1);
     if(idx===0)dir=1;if(idx===stops.length-1)dir=-1;
-    return {id,P,tr:makeTrain(LINES[id].colorHex),idx,dir,c:stops[idx].s,v:0,state:'dwell',timer:3+k*2,required:'light',readyAt:0};
+    return {id,P,tr:makeTrain(id),idx,dir,c:stops[idx].s,v:0,state:'dwell',timer:3+k*2,required:'light',readyAt:0};
   });
   s=STATIONS[0].target;v=0;
   $('end').style.display='none';
@@ -982,8 +1115,8 @@ function stepDisp(dt){
       const fx=-Math.sin(D.yaw),fz=-Math.cos(D.yaw),rx=-fz,rz=fx;          // camera forward and right in world space
       const wx=(fx*fw+rx*sd)/len*sp,wz=(fz*fw+rz*sd)/len*sp;
       const p=D.P.at(D.ps),side=D.P.side;
-      D.ps=clamp(D.ps+wx*p.tx+wz*p.tz,D.stS-66,D.stS+66);                  // along the track
-      D.po=clamp(D.po+(wx*-p.tz+wz*p.tx)*side,2.5,7.2);                     // towards / away from the track edge
+      D.ps=clamp(D.ps+wx*p.tx+wz*p.tz,D.stS-D.cfg.walk,D.stS+D.cfg.walk);                  // along the track
+      D.po=clamp(D.po+(wx*-p.tz+wz*p.tx)*side,D.cfg.poMin,D.cfg.poMax);                     // towards / away from the track edge
       D.stand=D.P.railPt(D.ps,side*D.po);
     }
   }
@@ -1018,7 +1151,7 @@ function renderDisp(dt){
   for(const t of aiTrains)placeCars(t.tr,t.P,t.c,t.dir);
   train.visible=false;
   camera.rotation.order='YXZ';
-  camera.position.set(D.stand.x,2.7,D.stand.z);
+  camera.position.set(D.stand.x,D.cfg.eyeY,D.stand.z);
   camera.rotation.set(D.pitch,D.yaw+(D.locked?0:D.mlook),0);
   skyGroup.position.copy(camera.position);
   headlight.intensity=0;
@@ -1029,7 +1162,7 @@ function renderDisp(dt){
 const gameCanvas=document.getElementById('c');
 function toggleLock(){
   if(document.pointerLockElement===gameCanvas)document.exitPointerLock();
-  else if(gameCanvas.requestPointerLock){try{gameCanvas.requestPointerLock();}catch(e){}}
+  else if(gameCanvas.requestPointerLock){try{const r=gameCanvas.requestPointerLock();if(r&&r.catch)r.catch(()=>{});}catch(e){}}
 }
 document.addEventListener('pointerlockchange',()=>{
   D.locked=document.pointerLockElement===gameCanvas;
@@ -1203,8 +1336,8 @@ function render(dt){
   if(camMode==='cab'){
     const f=at(s-1.2),a=at(s+40);
     const bob=Math.sin(bobT*1.7)*0.012*Math.min(1,v/10);
-    camera.position.set(f.x,2.95+bob,f.z);
-    camera.lookAt(a.x,2.55,a.z);
+    camera.position.set(f.x,LINE.eye+bob,f.z);
+    camera.lookAt(a.x,LINE.eye-0.4,a.z);
     camera.rotateZ(Math.sin(bobT*0.9)*0.0035*Math.min(1,v/10));
   }else{
     const f=at(s-45),a=at(s-12);
