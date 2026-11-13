@@ -1060,7 +1060,7 @@ function rainTick(dt){        // call every frame: fades the rain bed in/out and
   rainGain.gain.setTargetAtTime(on?0.2:0,actx.currentTime,0.5);
   if(!on)return;
   rainAcc+=dt;
-  while(rainAcc>0.06){rainAcc-=0.06;rainDrop();}
+  while(rainAcc>0.22){rainAcc-=0.22;rainDrop();}
 }
 function tone(freq,at0,dur,vol){
   if(!actx)return;const t=actx.currentTime+at0,o=actx.createOscillator(),g=actx.createGain();
