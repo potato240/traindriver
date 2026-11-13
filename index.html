@@ -149,7 +149,7 @@
     <p id="intro"></p>
     <table id="ctlDisp" class="hidden">
       <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Choose your tool: whistle / green light (round board on a pole) / both together (<kbd>Q</kbd> or scroll to cycle)</td></tr>
-      <tr><td>Click / <kbd>Space</kbd></td><td>Use the equipped tool (the green light toggles up and down)</td></tr>
+      <tr><td>Click / <kbd>Space</kbd></td><td>Use the equipped tool (any tool sends a waiting train away; the green light toggles up and down)</td></tr>
       <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Walk along the platform (hold <kbd>Shift</kbd> to hurry)</td></tr>
       <tr><td>Click / <kbd>L</kbd></td><td>Lock the cursor to look around freely (<kbd>Esc</kbd> to release)</td></tr>
       <tr><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td>Turn your head</td></tr>
@@ -938,11 +938,6 @@ function dispOk(t){
   if(actx){tone(392,0,.25,.1);tone(523,.2,.35,.1);}
   departTrain(t);
 }
-function dispWrong(t){
-  D.score-=50;D.wrong++;D.lightUp=false;$('lightBtn').classList.remove('on');$('bothBtn').classList.remove('on');D.lockout=D.time+2.5;
-  showMsg('Wrong signal! That train needs: '+REQ[t.required]+'  -50','bad',3200);
-  if(actx){tone(220,0,.35,.14);tone(196,.15,.45,.14);}
-}
 function dispEarly(){
   if(D.time-D.lastEarly<3)return;
   D.lastEarly=D.time;D.score-=20;D.early++;showMsg('Too early - passengers are still boarding / doors not closed  -20','bad',2600);
@@ -953,10 +948,7 @@ function dispWhistle(){
   const t=myTrain();
   if(!t){showMsg('No train at your platform','',1500);return;}
   if(t.state!=='ready'){dispEarly();return;}
-  if(D.lockout>D.time)return;
-  if(t.required==='light')dispWrong(t);
-  else if(t.required==='whistle'){if(D.lightUp)dispWrong(t);else dispOk(t);}
-  else if(D.lightUp)dispOk(t);                       // both: light already up
+  dispOk(t);                                         // any tool sends the train away
 }
 function dispLight(){
   if(ROLE!=='dispatcher'||!started||paused||D.over)return;
@@ -965,9 +957,7 @@ function dispLight(){
   const t=myTrain();
   if(!t){showMsg('No train at your platform','',1500);return;}
   if(t.state!=='ready'){dispEarly();return;}
-  if(D.lockout>D.time)return;
-  if(t.required==='whistle')dispWrong(t);
-  else if(t.required==='both'&&D.time-D.whistleT<3)dispOk(t);   // both: whistle just blown
+  dispOk(t);
 }
 function endShift(){
   D.over=true;
@@ -975,7 +965,7 @@ function endShift(){
   const rating=total>=900?'Station master':total>=600?'Senior dispatcher':total>=300?'Dispatcher':'Trainee';
   $('endtitle').textContent='Shift complete';
   $('endbody').textContent='Rating: '+rating+'  |  Score '+total;
-  $('endtable').innerHTML=[['Trains dispatched',D.done],['Dispatched within 8 s',D.fast],['Wrong signals',D.wrong],['Signalled too early',D.early]].map(r=>'<tr><td>'+r[0]+'</td><td style="text-align:right">'+r[1]+'</td></tr>').join('');
+  $('endtable').innerHTML=[['Trains dispatched',D.done],['Dispatched within 8 s',D.fast],['Signalled too early',D.early]].map(r=>'<tr><td>'+r[0]+'</td><td style="text-align:right">'+r[1]+'</td></tr>').join('');
   $('again').textContent='Another shift';
   $('end').style.display='flex';
 }
@@ -999,8 +989,6 @@ function stepDisp(dt){
   }
   for(const t of aiTrains)stepAI(t,dt);
   const mt=myTrain();
-  // a green light on its own is enough for a 'light' train once it has been held up for a moment
-  if(mt&&mt.state==='ready'&&mt.required==='light'&&D.lightUp&&D.time-D.lightUpAt>0.7&&D.lockout<=D.time)dispOk(mt);
   if(mt&&mt.state==='ready'&&D.time-mt.readyAt>14)D.score-=1.5*dt;           // held up too long
   // HUD
   const left=Math.max(0,SHIFT_LEN-D.time);
@@ -1013,7 +1001,7 @@ function stepDisp(dt){
     $('dtrain').innerHTML='<span style="color:'+LINES[mt.id].color+'">'+LINES[mt.id].name+'</span> train';
     if(mt.state==='dwell'){$('dstate').textContent='Passengers boarding... '+Math.ceil(mt.timer)+'s';$('dreq').textContent='';}
     else if(mt.state==='closing'){$('dstate').textContent='Doors closing...';$('dreq').textContent='';}
-    else{$('dstate').textContent='Doors closed - waiting '+Math.round(D.time-mt.readyAt)+'s';$('dreq').textContent='Signal: '+REQ[mt.required];}
+    else{$('dstate').textContent='Doors closed - waiting '+Math.round(D.time-mt.readyAt)+'s';$('dreq').textContent='Send it away!';}
   }
   $('dboard').innerHTML='<small style="opacity:.65;letter-spacing:.08em;text-transform:uppercase;font-size:11px">Network</small>'+aiTrains.map(t=>'<div class="row"><i style="background:'+LINES[t.id].color+'"></i><b>'+LINES[t.id].second+'</b> '+trainStatus(t)+'</div>').join('');
   if(blowTimer>0){blowTimer-=dt;$('whistleBtn').classList.toggle('blow',blowTimer>0);}
@@ -1254,7 +1242,7 @@ $('selWeather').onchange=e=>setEnv(null,e.target.value);
   if(ROLE==='dispatcher'){
     document.title='Sebford Dispatcher - Train Driver';
     $('title').innerHTML='Sebford <span>Dispatcher</span>';
-    $('intro').innerHTML='You are the dispatcher at <b>'+$('selStation').value+'</b>. One train per line (Aqua and Airlink) shuttles back and forth along its line. When a train at your platform has finished boarding and closed its doors, the order panel tells you which signal to give: the <b>whistle</b>, the <b>green light</b> (round board on a pole), or <b>both</b>. Wrong signals and signalling too early cost points; sending trains away quickly earns more.';
+    $('intro').innerHTML='You are the dispatcher at <b>'+$('selStation').value+'</b>. One train per line (Aqua and Airlink) shuttles back and forth along its line. When a train at your platform has finished boarding and closed its doors, send it on its way with your <b>whistle</b>, the <b>green light</b> (round board on a pole), or <b>both</b> - it doesn\'t matter which. Signalling too early costs points; sending trains away quickly earns more.';
     $('ctlDriver').classList.add('hidden');$('ctlDisp').classList.remove('hidden');
     $('lblLine').classList.add('hidden');$('lblDir').classList.add('hidden');$('lblStation').classList.remove('hidden');
     $('go').textContent='Start shift';
