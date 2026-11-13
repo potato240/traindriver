@@ -1059,8 +1059,6 @@ function rainTick(dt){        // call every frame: fades the rain bed in/out and
   const on=CFG.weather==='rain';
   rainGain.gain.setTargetAtTime(on?0.2:0,actx.currentTime,0.5);
   if(!on)return;
-  rainAcc+=dt;
-  while(rainAcc>0.22){rainAcc-=0.22;rainDrop();}
 }
 function tone(freq,at0,dur,vol){
   if(!actx)return;const t=actx.currentTime+at0,o=actx.createOscillator(),g=actx.createGain();
@@ -1300,7 +1298,7 @@ function stepDisp(dt){
   if(actx){
     let near=1e9,spd=0;
     for(const t of aiTrains){const p=t.P.at(t.c),d=Math.hypot(p.x-D.stand.x,p.z-D.stand.z);if(d<near){near=d;spd=t.v;}}
-    noiseGain.gain.value=0.02+clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.25;noiseFilter.frequency.value=180+spd*22;
+    noiseGain.gain.setTargetAtTime(clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.22,actx.currentTime,0.25);
     rainTick(dt);
   }
   if(D.time>=SHIFT_LEN)endShift();
@@ -1473,7 +1471,7 @@ function stepPass(dt){
   if(actx){
     let near=1e9,spd=0;const rp=rt&&PX.cp?PX.cp:D.stand;
     for(const t of aiTrains){const p=t.P.at(t.c),d=Math.hypot(p.x-rp.x,p.z-rp.z);if(d<near){near=d;spd=t.v;}}
-    noiseGain.gain.value=0.02+clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.25;noiseFilter.frequency.value=180+spd*22;
+    noiseGain.gain.setTargetAtTime(clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.22,actx.currentTime,0.25);
     rainTick(dt);
     if(rt&&rt.v>0.8&&!LINES[rt.id].tram){clackDist+=rt.v*dt;while(clackDist>=18){clackDist-=18;const vol=Math.min(0.3,0.05+rt.v/28*0.25);clack(vol,0);clack(vol*0.8,2.6/Math.max(rt.v,2));}}
   }
@@ -1647,7 +1645,7 @@ function step(dt){
   if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)$('msg').classList.remove('show');}
   // audio
   if(actx){
-    noiseGain.gain.value=0.03+Math.min(1,v/28)*0.22;noiseFilter.frequency.value=180+v*22;
+    noiseGain.gain.setTargetAtTime(Math.min(1,v/28)*0.22,actx.currentTime,0.25);
     hornGain.gain.setTargetAtTime(keys.KeyH?0.1:0,actx.currentTime,0.03);
     rainTick(dt);
     if(v>0.8){   // rail-joint clacks every 18 m, two axles per bogie
