@@ -72,6 +72,7 @@
   #dtrain{font-size:18px;font-weight:700}
   #dstate{opacity:.85;margin:2px 0 6px;min-height:18px}
   #dreq{font-size:24px;font-weight:800;color:#ffd23f;min-height:30px}
+  body.pass #dtools,body.pass #stats{display:none}
   #lockhint{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);padding:8px 14px;font-size:13px;opacity:.9;pointer-events:none;text-align:center;max-width:34vw}
   #dboard{position:fixed;left:12px;bottom:14px;padding:10px 14px;min-width:270px;font-size:13px}
   #dboard .row{margin:4px 0;display:flex;gap:8px;align-items:center}
@@ -118,7 +119,7 @@
   </div>
 </div>
 
-<div id="dtop" class="dispOnly panel"><small>Dispatching at</small><b id="dstation">-</b><small style="margin-top:6px">Shift left</small><b id="dleft">6:00</b></div>
+<div id="dtop" class="dispOnly panel"><small id="dlabel">Dispatching at</small><b id="dstation">-</b><small id="dlabel2" style="margin-top:6px">Shift left</small><b id="dleft">6:00</b></div>
 <div id="dorder" class="dispOnly panel">
   <small>Train at your platform</small>
   <div id="dtrain">No train at the platform</div>
@@ -157,6 +158,15 @@
       <tr><td><kbd>T</kbd> / <kbd>Y</kbd></td><td>Change time of day / weather</td></tr>
       <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart the shift</td></tr>
     </table>
+    <table id="ctlPass" class="hidden">
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Walk around the station - across the tracks and between platforms (hold <kbd>Shift</kbd> to hurry)</td></tr>
+      <tr><td>Click / <kbd>L</kbd></td><td>Lock the cursor to look around freely (<kbd>Esc</kbd> to release)</td></tr>
+      <tr><td><kbd>E</kbd></td><td>Board a train with open doors at your platform / get off at a station</td></tr>
+      <tr><td>Mouse / <kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd> / wheel</td><td>While riding: orbit and zoom the follow camera</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Mute all sound</td></tr>
+      <tr><td><kbd>T</kbd> / <kbd>Y</kbd></td><td>Change time of day / weather</td></tr>
+      <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart</td></tr>
+    </table>
     <table id="ctlDriver">
       <tr><td><kbd>W</kbd> / <kbd>&uarr;</kbd></td><td>Raise the set speed - the train speeds up to it</td></tr>
       <tr><td><kbd>S</kbd> / <kbd>&darr;</kbd></td><td>Lower the set speed - the train slows down to it</td></tr>
@@ -168,7 +178,7 @@
       <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart</td></tr>
     </table>
     <div class="opts">
-      <label>Role <select id="selRole"><option value="driver">Train driver</option><option value="dispatcher">Dispatcher</option></select></label>
+      <label>Role <select id="selRole"><option value="driver">Train driver</option><option value="dispatcher">Dispatcher</option><option value="passenger">Passenger</option></select></label>
       <label id="lblStation" class="hidden">Station <select id="selStation"></select></label>
       <label id="lblLine">Line <select id="selLine"><option value="aqua">Sebford Aqua</option><option value="airlink">Sebford Airlink</option><option value="metro">Sebford Metro</option></select></label>
       <label id="lblDir">Direction <select id="selRoute"></select></label>
@@ -271,11 +281,12 @@ const CFG={
   route:Q.get('route')==='return'?'return':'out',
   time:['day','dusk','night'].includes(Q.get('time'))?Q.get('time'):'day',
   weather:['clear','rain','fog'].includes(Q.get('weather'))?Q.get('weather'):'clear',
-  role:Q.get('role')==='dispatcher'?'dispatcher':'driver',
+  role:['dispatcher','passenger'].includes(Q.get('role'))?Q.get('role'):'driver',
   station:Q.get('station')||'Sebford Central'
 };
 const ROLE=CFG.role;
-if(ROLE==='dispatcher')document.body.classList.add('disp');
+if(ROLE!=='driver')document.body.classList.add('disp');
+if(ROLE==='passenger')document.body.classList.add('pass');
 const LINE=LINES[CFG.line], AIRLINK=CFG.line==='airlink';
 const TRAIN_CARS=LINE.cars, CAR_LEN=LINE.carLen, PLAT_HALF=LINE.platHalf, STOP_AHEAD=LINE.stopAhead;   // the line you drive
 const WAYPOINTS=LINE.wp.map(p=>p.slice());
@@ -913,31 +924,34 @@ function tone(freq,at0,dur,vol){
 }
 const chimeOpen=()=>{tone(880,0,.5,.2);tone(660,.38,.8,.2);};            // ding-dong as the doors open
 const chimeClose=()=>{tone(1100,0,.14,.14);tone(1100,.28,.14,.14);tone(1100,.56,.14,.14);};  // door-closing pips
-const chimeAnn=()=>{                                                                           // announcement jingle (differs per line)
-  if(AIRLINK){tone(988,0,.3,.15);tone(784,.25,.3,.15);tone(988,.5,.3,.15);tone(1319,.75,.6,.15);}
-  else if(LINE.id==='metro'){tone(1047,0,.16,.15);tone(1047,.22,.16,.15);tone(1568,.5,.4,.14);}
+const chimeAnn=(id)=>{                                                                         // announcement jingle (differs per line)
+  id=id||LINE.id;
+  if(id==='airlink'){tone(988,0,.3,.15);tone(784,.25,.3,.15);tone(988,.5,.3,.15);tone(1319,.75,.6,.15);}
+  else if(id==='metro'){tone(1047,0,.16,.15);tone(1047,.22,.16,.15);tone(1568,.5,.4,.14);}
   else{tone(659,0,.35,.16);tone(523,.3,.35,.16);tone(784,.6,.55,.16);}
 };
-/* each line has its own announcer: Aqua a lighter UK voice, Airlink a deeper voice */
-function pickVoice(){
+/* each line has its own announcer: Aqua a lighter UK voice, Airlink a deeper voice, Metro a bright US-style voice */
+function pickVoice(id){
+  id=id||LINE.id;
   const vs=speechSynthesis.getVoices().filter(x=>/^en/i.test(x.lang));
   if(!vs.length)return null;
   const gb=vs.filter(x=>/en-GB/i.test(x.lang)),pool=gb.concat(vs.filter(x=>!gb.includes(x)));
   const female=/female|zira|hazel|susan|samantha|serena|libby|sonia|karen|moira|fiona|tessa|heera/i;
   const male=/\bmale\b|david|george|mark|daniel|guy|ryan|james|alex|fred|thomas|oliver|arthur|rishi/i;
-  const hit=LINE.id==='metro'?(vs.find(x=>!/en-GB/i.test(x.lang)&&/en-(US|AU|IE|NZ|ZA|IN|CA)/i.test(x.lang)&&female.test(x.name))||vs.find(x=>!/en-GB/i.test(x.lang))||pool[2]||pool[0]):pool.find(x=>(AIRLINK?male:female).test(x.name));
-  return hit||(AIRLINK?(pool[1]||pool[0]):pool[0]);
+  const hit=id==='metro'?(vs.find(x=>!/en-GB/i.test(x.lang)&&/en-(US|AU|IE|NZ|ZA|IN|CA)/i.test(x.lang)&&female.test(x.name))||vs.find(x=>!/en-GB/i.test(x.lang))||pool[2]||pool[0]):pool.find(x=>(id==='airlink'?male:female).test(x.name));
+  return hit||(id==='airlink'?(pool[1]||pool[0]):pool[0]);
 }
-function speak(text){
+function speak(text,id){
+  id=id||LINE.id;
   if(muted||!('speechSynthesis' in window))return;
   try{
-    speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=LINE.id==='metro'?'en-US':'en-GB';
-    u.pitch=AIRLINK?0.7:LINE.id==='metro'?1.35:1.15;u.rate=AIRLINK?1.05:LINE.id==='metro'?1.08:0.95;
-    const vo=pickVoice();if(vo)u.voice=vo;
+    speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=id==='metro'?'en-US':'en-GB';
+    u.pitch=id==='airlink'?0.7:id==='metro'?1.35:1.15;u.rate=id==='airlink'?1.05:id==='metro'?1.08:0.95;
+    const vo=pickVoice(id);if(vo)u.voice=vo;
     speechSynthesis.speak(u);
   }catch(e){}
 }
-function announce(text){if(!actx)return;chimeAnn();setTimeout(()=>speak(text),1300);}
+function announce(text,id){if(!actx)return;chimeAnn(id);setTimeout(()=>speak(text,id),1300);}
 
 /* ---- time of day + weather ---- */
 const ENV={
@@ -1006,10 +1020,8 @@ function whistleSound(){
 function resetDisp(){
   const name=ALL_STATIONS.includes(CFG.station)?CFG.station:'Sebford Central';
   D.name=name;D.lines=LINE_IDS.filter(id=>OUT[id].stops.some(x=>x.name===name));
-  const P=OUT[D.lines[0]],st=P.stops.find(x=>x.name===name),cfg=LINES[D.lines[0]].stand,sp=Math.min(P.L-3,st.s+cfg.ahead);
-  D.cfg=cfg;D.P=P;D.stS=st.s;D.ps=sp;D.po=cfg.off;D.yaw=P.YAW[sp];D.pitch=-0.04;D.mlook=0;   // stand near the end of the platform, looking back along the tracks
-  D.stand=P.railPt(D.ps,P.side*D.po);
-  Object.assign(D,{time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,log:[]});
+  standAt(D.lines[0],name);   // stand near the end of the platform, looking back along the tracks
+  Object.assign(D,{dispatch:true,time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,log:[]});
   for(const t of aiTrains)scene.remove(t.tr.group);
   aiTrains=LINE_IDS.map((id,k)=>{
     const P=OUT[id],stops=P.stops,mi=stops.findIndex(x=>x.name===name);
@@ -1033,7 +1045,7 @@ function departTrain(t){
   t.state='run';t.v=0;
 }
 function stepAI(t,dt){
-  const stops=t.P.stops,here=stops[t.idx],mine=D.lines.includes(t.id)&&here.name===D.name;
+  const stops=t.P.stops,here=stops[t.idx],mine=D.dispatch&&D.lines.includes(t.id)&&here.name===D.name;
   if(t.state==='dwell'){
     t.v=0;t.timer-=dt;
     if(t.timer<=0){t.state='closing';t.timer=2.2;if(mine)chimeClose();}
@@ -1051,7 +1063,7 @@ function stepAI(t,dt){
     if(dist<=0.4||(dist<4&&t.v<0.7)||dist<0){
       t.c=tgt;t.v=0;t.idx+=t.dir;t.state='dwell';
       const term=t.idx===0||t.idx===stops.length-1;
-      t.timer=(D.lines.includes(t.id)&&stops[t.idx].name===D.name)?7:(8+Math.random()*4)+(term?4:0);
+      t.timer=(D.dispatch&&D.lines.includes(t.id)&&stops[t.idx].name===D.name)?7:(8+Math.random()*4)+(term?4:0);
     }
   }
 }
@@ -1102,9 +1114,7 @@ function endShift(){
   $('again').textContent='Another shift';
   $('end').style.display='flex';
 }
-function stepDisp(dt){
-  if(D.over)return;
-  D.time+=dt;
+function walk(dt){   // dispatcher: walk along your own platform
   if(keys.ArrowLeft)D.yaw+=1.6*dt;
   if(keys.ArrowRight)D.yaw-=1.6*dt;
   // walk along the platform: W/S forward/back, A/D sideways (Shift to hurry)
@@ -1120,6 +1130,11 @@ function stepDisp(dt){
       D.stand=D.P.railPt(D.ps,side*D.po);
     }
   }
+}
+function stepDisp(dt){
+  if(D.over)return;
+  D.time+=dt;
+  walk(dt);
   for(const t of aiTrains)stepAI(t,dt);
   const mt=myTrain();
   if(mt&&mt.state==='ready'&&D.time-mt.readyAt>14)D.score-=1.5*dt;           // held up too long
@@ -1150,14 +1165,177 @@ function stepDisp(dt){
 function renderDisp(dt){
   for(const t of aiTrains)placeCars(t.tr,t.P,t.c,t.dir);
   train.visible=false;
-  camera.rotation.order='YXZ';
-  camera.position.set(D.stand.x,D.cfg.eyeY,D.stand.z);
-  camera.rotation.set(D.pitch,D.yaw+(D.locked?0:D.mlook),0);
+  if(ROLE==='passenger'&&PX.train)rideCamera(dt);
+  else{
+    camera.rotation.order='YXZ';
+    camera.position.set(D.stand.x,ROLE==='passenger'?PX.eye:D.cfg.eyeY,D.stand.z);
+    camera.rotation.set(D.pitch,D.yaw+(D.locked?0:D.mlook),0);
+  }
   skyGroup.position.copy(camera.position);
   headlight.intensity=0;
   updateRain(dt);updateFlyer();
   renderer.render(scene,camera);
 }
+/* ================================================================== *
+ *  PASSENGER ROLE
+ *  Walk around a station (including between platforms), press E to board a train that has its doors
+ *  open at the platform you are standing on, ride it in a follow view, and press E at any station to get off.
+ * ================================================================== */
+const PX={train:null,time:0,visited:0,orbYaw:0,orbH:0,orbR:22,cp:null,station:'',home:{x:0,z:0},eye:2.7,onPlat:null,boarded:0};
+const destOf=t=>{const st=t.P.stops;return t.idx===0?st[st.length-1].name:t.idx===st.length-1?st[0].name:(t.dir>0?st[st.length-1].name:st[0].name);};
+function standAt(id,name){      // put the player on the platform of line `id` at station `name`
+  const P=OUT[id],st=P.stops.find(x=>x.name===name),cfg=LINES[id].stand,sp=Math.min(P.L-3,st.s+cfg.ahead);
+  D.cfg=cfg;D.P=P;D.stS=st.s;D.ps=sp;D.po=cfg.off;D.yaw=P.YAW[sp];D.pitch=-0.04;D.mlook=0;
+  D.stand=P.railPt(sp,P.side*cfg.off);
+  PX.home={x:P.Px[st.s],z:P.Pz[st.s]};PX.station=name;PX.eye=(LINES[id].platH)+1.7;
+}
+function platformAt(x,z){       // which platform (if any) is the point (x,z) on?
+  for(const id of LINE_IDS){
+    const P=OUT[id],cfg=LINES[id];
+    for(const st of P.stops){
+      const dx=P.Px[st.s]-x,dz=P.Pz[st.s]-z;
+      if(dx*dx+dz*dz>(cfg.platHalf+14)**2)continue;
+      let best=1e9,bs=st.s;
+      for(let s=st.s-cfg.platHalf;s<=st.s+cfg.platHalf;s+=2){const p=P.at(s),d=(p.x-x)**2+(p.z-z)**2;if(d<best){best=d;bs=s;}}
+      const p=P.at(bs),off=((x-p.x)*(-p.tz)+(z-p.z)*p.tx)*P.side;      // distance from the track towards the platform side
+      const lo=cfg.tram?1.2:1.6,hi=cfg.tram?4.5:7.9;
+      if(off>=lo&&off<=hi)return {id,stop:st.name,h:cfg.platH};
+    }
+  }
+  return null;
+}
+function walkFree(dt){          // walk anywhere around the station, across the tracks and between platforms
+  if(keys.ArrowLeft)D.yaw+=1.6*dt;
+  if(keys.ArrowRight)D.yaw-=1.6*dt;
+  const fw=(keys.KeyW?1:0)-(keys.KeyS?1:0),sd=(keys.KeyD?1:0)-(keys.KeyA?1:0);
+  if(fw||sd){
+    const sp=(keys.ShiftLeft||keys.ShiftRight?6:3.2)*dt,len=Math.hypot(fw,sd)||1;
+    const fx=-Math.sin(D.yaw),fz=-Math.cos(D.yaw),rx=-fz,rz=fx;
+    const nx=D.stand.x+(fx*fw+rx*sd)/len*sp,nz=D.stand.z+(fz*fw+rz*sd)/len*sp;
+    if(Math.hypot(nx-PX.home.x,nz-PX.home.z)<230&&!inRect(nx,nz,SEA)&&!inRect(nx,nz,DOCKWATER))D.stand={x:nx,z:nz};
+  }
+  PX.onPlat=platformAt(D.stand.x,D.stand.z);
+  const target=(PX.onPlat?PX.onPlat.h:0)+1.7;PX.eye+=(target-PX.eye)*Math.min(1,dt*10);
+}
+function spawnPassengerTrains(name){
+  for(const t of aiTrains)scene.remove(t.tr.group);
+  aiTrains=LINE_IDS.map((id,k)=>{
+    const P=OUT[id],stops=P.stops,mi=stops.findIndex(x=>x.name===name);
+    let idx,dir=1;
+    if(mi>=0&&id===D.lines[0])idx=mi;
+    else if(mi>=0){if(mi+1<stops.length){idx=mi+1;dir=-1;}else{idx=mi-1;dir=1;}}
+    else idx=Math.min(1+k,stops.length-1);
+    if(idx===0)dir=1;if(idx===stops.length-1)dir=-1;
+    return {id,P,tr:makeTrain(id),idx,dir,c:stops[idx].s,v:0,state:'dwell',timer:(mi>=0&&id===D.lines[0])?16:6+k*5,required:'light',readyAt:0};
+  });
+}
+function resetPass(){
+  const name=ALL_STATIONS.includes(CFG.station)?CFG.station:'Sebford Central';
+  D.dispatch=false;D.name='';D.lines=LINE_IDS.filter(id=>OUT[id].stops.some(x=>x.name===name));
+  Object.assign(PX,{train:null,time:0,visited:0,orbYaw:0,orbH:0,cp:null,boarded:0});
+  standAt(D.lines[0],name);
+  spawnPassengerTrains(name);
+  s=STATIONS[0].target;v=0;
+  PX.onPlat=platformAt(D.stand.x,D.stand.z);
+  $('end').style.display='none';
+  $('dlabel').textContent='You are at';$('dlabel2').textContent='Journey time';
+}
+const boardable=()=>{const pl=PX.onPlat;if(!pl)return null;return aiTrains.find(t=>t.id===pl.id&&t.P.stops[t.idx].name===pl.stop&&t.state!=='run')||null;};
+function boardTrain(t){
+  PX.train=t;PX.boarded++;PX.orbYaw=0;PX.orbH=0;PX.cp=null;t.annLeg=false;
+  if(document.pointerLockElement)document.exitPointerLock();
+  showMsg('All aboard the '+LINES[t.id].name+' to '+destOf(t),'good',3000);
+  if(actx)chimeClose();
+}
+function getOff(t){
+  const name=t.P.stops[t.idx].name;
+  standAt(t.id,name);PX.train=null;PX.visited++;PX.cp=null;
+  PX.onPlat=platformAt(D.stand.x,D.stand.z);
+  showMsg('You got off at '+name,'good',3000);
+}
+function passE(){
+  if(ROLE!=='passenger'||!started||paused)return;
+  if(PX.train){
+    const t=PX.train;
+    if(t.state==='dwell')getOff(t);
+    else showMsg(t.state==='closing'?'The doors are closing':'The doors are locked while the train is moving','bad',1800);
+    return;
+  }
+  const t=boardable();
+  if(!PX.onPlat){showMsg('Walk onto a platform to catch a train','',1800);return;}
+  if(!t){showMsg('There is no train at this platform right now','',1800);return;}
+  if(t.state!=='dwell'){showMsg('Too late - the doors are closing','bad',1800);return;}
+  boardTrain(t);
+}
+function trainEvents(t,prev){   // announcements for the train you are riding
+  if(PX.train!==t)return;
+  const nm=t.P.stops[t.idx].name;
+  if(prev!=='run'&&t.state==='run'){
+    t.annLeg=false;const nxt=t.P.stops[t.idx+t.dir];
+    announce('This is the '+LINES[t.id].short+' to '+destOf(t)+'. The next station is '+nxt.name+'.',t.id);
+  }
+  if(prev==='run'&&t.state==='dwell'){
+    showMsg('Arrived at '+nm+' - press E to get off','good',4500);
+    if(actx){chimeOpen();setTimeout(()=>speak('Welcome to '+nm+'. Please mind the gap between the train and the platform.',t.id),1300);}
+  }
+}
+function rideCamera(dt){
+  const t=PX.train,cfg=LINES[t.id],c=t.P.at(t.c),tram=!!cfg.tram;
+  const bx=-c.tx*t.dir,bz=-c.tz*t.dir,ca=Math.cos(PX.orbYaw),sa=Math.sin(PX.orbYaw);
+  const R=cfg.cars*cfg.carLen/2+PX.orbR,rx=bx*ca-bz*sa,rz=bx*sa+bz*ca;
+  const want={x:c.x+rx*R,y:(tram?5.5:7.5)+PX.orbH,z:c.z+rz*R};
+  if(!PX.cp||Math.hypot(PX.cp.x-want.x,PX.cp.z-want.z)>160)PX.cp={x:want.x,y:want.y,z:want.z};
+  const k=1-Math.exp(-4*dt);
+  PX.cp.x+=(want.x-PX.cp.x)*k;PX.cp.y+=(want.y-PX.cp.y)*k;PX.cp.z+=(want.z-PX.cp.z)*k;
+  camera.position.set(PX.cp.x,PX.cp.y,PX.cp.z);camera.lookAt(c.x,2.4,c.z);
+}
+function stepPass(dt){
+  PX.time+=dt;
+  for(const t of aiTrains){const prev=t.state;stepAI(t,dt);trainEvents(t,prev);}
+  const rt=PX.train;
+  if(rt){
+    if(keys.ArrowLeft)PX.orbYaw+=1.4*dt;
+    if(keys.ArrowRight)PX.orbYaw-=1.4*dt;
+    if(keys.ArrowUp)PX.orbH=Math.min(14,PX.orbH+6*dt);
+    if(keys.ArrowDown)PX.orbH=Math.max(-3,PX.orbH-6*dt);
+    if(rt.state==='run'&&!rt.annLeg){const nxt=rt.P.stops[rt.idx+rt.dir];if(Math.abs(nxt.s-rt.c)<350){rt.annLeg=true;announce('We are now approaching '+nxt.name+'.',rt.id);}}
+  }else walkFree(dt);
+  // HUD
+  $('dleft').textContent=fmtTime(PX.time);
+  if(rt){
+    const nm=rt.P.stops[rt.idx].name;
+    $('dstation').innerHTML='Riding <span style="color:'+LINES[rt.id].color+'">'+LINES[rt.id].name+'</span>';$('dlabel').textContent='On board';
+    $('dtrain').textContent='To '+destOf(rt);
+    if(rt.state==='run'){const nxt=rt.P.stops[rt.idx+rt.dir],d=Math.abs(nxt.s-rt.c);$('dstate').textContent='Next stop: '+nxt.name+' ('+(d>1000?(d/1000).toFixed(1)+' km':Math.round(d)+' m')+')';$('dreq').textContent='';}
+    else if(rt.state==='closing'){$('dstate').textContent='Doors closing at '+nm;$('dreq').textContent='';}
+    else{$('dstate').textContent='At '+nm+' - doors open';$('dreq').textContent='Press E to get off';}
+  }else{
+    const pl=PX.onPlat,bt=boardable();
+    $('dlabel').textContent='You are at';
+    $('dstation').textContent=pl?pl.stop+' - '+LINES[pl.id].second+' platform':PX.station+' (not on a platform)';
+    if(!pl){$('dtrain').textContent='Walk onto a platform';$('dstate').textContent='Platforms are on either side of the tracks';$('dreq').textContent='';}
+    else if(bt){
+      $('dtrain').innerHTML='<span style="color:'+LINES[bt.id].color+'">'+LINES[bt.id].name+'</span> to '+destOf(bt);
+      if(bt.state==='dwell'){$('dstate').textContent='Doors open - '+Math.ceil(bt.timer)+'s until they close';$('dreq').textContent='Press E to board';}
+      else{$('dstate').textContent='Doors closing...';$('dreq').textContent='';}
+    }else{
+      $('dtrain').textContent='No train at this platform';
+      const inc=aiTrains.filter(t=>t.id===pl.id&&t.state==='run'&&t.P.stops[t.idx+t.dir].name===pl.stop).sort((a,b)=>Math.abs(a.P.stops[a.idx+a.dir].s-a.c)-Math.abs(b.P.stops[b.idx+b.dir].s-b.c))[0];
+      $('dstate').textContent=inc?'Next '+LINES[inc.id].second+' train in '+Math.round(Math.abs(inc.P.stops[inc.idx+inc.dir].s-inc.c))+' m':'Waiting for the next train...';
+      $('dreq').textContent='';
+    }
+  }
+  $('dboard').innerHTML='<small style="opacity:.65;letter-spacing:.08em;text-transform:uppercase;font-size:11px">Network  -  stations visited: '+PX.visited+'</small>'+aiTrains.map(t=>'<div class="row"><i style="background:'+LINES[t.id].color+'"></i><b>'+LINES[t.id].second+'</b> '+trainStatus(t)+(PX.train===t?'  (you)':'')+'</div>').join('');
+  if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)$('msg').classList.remove('show');}
+  if(actx){
+    let near=1e9,spd=0;const rp=rt&&PX.cp?PX.cp:D.stand;
+    for(const t of aiTrains){const p=t.P.at(t.c),d=Math.hypot(p.x-rp.x,p.z-rp.z);if(d<near){near=d;spd=t.v;}}
+    noiseGain.gain.value=0.02+clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.25;noiseFilter.frequency.value=180+spd*22;
+    rainGain.gain.value=CFG.weather==='rain'?0.07:0;
+    if(rt&&rt.v>0.8&&!LINES[rt.id].tram){clackDist+=rt.v*dt;while(clackDist>=18){clackDist-=18;const vol=Math.min(0.3,0.05+rt.v/28*0.25);clack(vol,0);clack(vol*0.8,2.6/Math.max(rt.v,2));}}
+  }
+}
+
 /* mouse look: lock the cursor (click the scene, or press L) to look freely; unlocked, the mouse position gently turns your head */
 const gameCanvas=document.getElementById('c');
 function toggleLock(){
@@ -1169,11 +1347,12 @@ document.addEventListener('pointerlockchange',()=>{
   const h=$('lockhint');if(h)h.style.display=D.locked?'none':'';
 });
 addEventListener('mousemove',e=>{
-  if(ROLE!=='dispatcher')return;
+  if(ROLE==='driver')return;
+  if(D.locked&&ROLE==='passenger'&&PX.train){PX.orbYaw-=e.movementX*0.004;PX.orbH=clamp(PX.orbH-e.movementY*0.05,-3,14);return;}
   if(D.locked){D.yaw-=e.movementX*0.0025;D.pitch=clamp(D.pitch-e.movementY*0.0022,-1.1,1.0);}
   else D.mlook=-(e.clientX/innerWidth-0.5)*2.4;
 });
-gameCanvas.addEventListener('click',()=>{if(ROLE==='dispatcher'&&started&&!D.locked)toggleLock();});
+gameCanvas.addEventListener('click',()=>{if(ROLE!=='driver'&&started&&!D.locked)toggleLock();});
 /* tools: choose with 1 / 2 / 3 (or Q / scroll wheel / click a slot), use the equipped one with click or Space */
 const TOOLS=['whistle','light','both'];
 D.tool='whistle';
@@ -1197,7 +1376,7 @@ $('lightBtn').onclick=()=>selectTool('light');
 $('bothBtn').onclick=()=>selectTool('both');
 $('whistleBtn').classList.add('sel');
 addEventListener('mousedown',e=>{if(ROLE==='dispatcher'&&started&&D.locked&&e.button===0)useTool();});
-addEventListener('wheel',e=>{if(ROLE==='dispatcher'&&started){selectTool(TOOLS[(TOOLS.indexOf(D.tool)+(e.deltaY>0?1:2))%3]);}},{passive:true});
+addEventListener('wheel',e=>{if(ROLE==='dispatcher'&&started){selectTool(TOOLS[(TOOLS.indexOf(D.tool)+(e.deltaY>0?1:2))%3]);}else if(ROLE==='passenger'&&PX.train)PX.orbR=clamp(PX.orbR+e.deltaY*0.03,8,70);},{passive:true});
 
 /* ---- input ---- */
 addEventListener('keydown',e=>{
@@ -1214,6 +1393,12 @@ addEventListener('keydown',e=>{
     if(e.code==='KeyL'){toggleLock();return;}
     if(['KeyD','KeyA','KeyC','KeyW','KeyS','KeyH'].includes(e.code))return;
   }
+  if(ROLE==='passenger'){
+    if(e.code==='KeyE'){passE();return;}
+    if(e.code==='KeyR'&&started){restartRole();return;}
+    if(e.code==='KeyL'){toggleLock();return;}
+    if(['KeyD','KeyA','KeyC','KeyW','KeyS','KeyH','Space'].includes(e.code))return;
+  }
   if(e.code==='KeyD')pressDoor();
   if(e.code==='KeyC')camMode=camMode==='cab'?'chase':'cab';
   if(e.code==='KeyT'){const o=['day','dusk','night'];setEnv(o[(o.indexOf(CFG.time)+1)%3]);showMsg('Time of day: '+CFG.time,'',1500);}
@@ -1224,7 +1409,7 @@ addEventListener('keydown',e=>{
   if(e.code==='Enter'&&!started)startGame();
 });
 addEventListener('keyup',e=>{keys[e.code]=false;});
-function restartRole(){if(ROLE==='dispatcher')resetDisp();else resetGame();}
+function restartRole(){if(ROLE==='dispatcher')resetDisp();else if(ROLE==='passenger')resetPass();else resetGame();}
 function startGame(){if(started)return;started=true;$('start').style.display='none';initAudio();restartRole();}
 $('go').onclick=startGame;
 $('again').onclick=restartRole;
@@ -1372,6 +1557,14 @@ $('selWeather').onchange=e=>setEnv(null,e.target.value);
   $('selStation').innerHTML=ALL_STATIONS.map(n=>'<option>'+n+'</option>').join('');
   $('selStation').value=ALL_STATIONS.includes(CFG.station)?CFG.station:'Sebford Central';
   $('selStation').onchange=e=>{CFG.station=e.target.value;syncURL();location.reload();};
+  if(ROLE==='passenger'){
+    document.title='Sebford Passenger - Train Driver';
+    $('title').innerHTML='Sebford <span>Passenger</span>';
+    $('intro').innerHTML='Time to travel. Walk around <b>'+$('selStation').value+'</b> - you can cross the tracks and walk between platforms - and stand on a platform with a train waiting at it. Press <b>E</b> to board while its doors are open and you will follow the train as it runs; press <b>E</b> again at any station to get off. Ride Sebford Aqua, Airlink or Metro (the Financial Quarter tram stop is a short walk from the Aqua station).';
+    $('ctlDriver').classList.add('hidden');$('ctlPass').classList.remove('hidden');
+    $('lblLine').classList.add('hidden');$('lblDir').classList.add('hidden');$('lblStation').classList.remove('hidden');
+    $('go').textContent='Start journey';
+  }
   if(ROLE==='dispatcher'){
     document.title='Sebford Dispatcher - Train Driver';
     $('title').innerHTML='Sebford <span>Dispatcher</span>';
@@ -1382,12 +1575,12 @@ $('selWeather').onchange=e=>setEnv(null,e.target.value);
   }
 }
 setEnv();
-if(ROLE==='dispatcher')resetDisp();else resetGame();
+if(ROLE==='dispatcher')resetDisp();else if(ROLE==='passenger')resetPass();else resetGame();
 let last=performance.now();
 function loop(now){
   const dt=Math.min(0.05,(now-last)/1000);last=now;
-  if(ROLE==='dispatcher'){if(started&&!paused)stepDisp(dt);renderDisp(dt);}
-  else{if(started&&!paused)step(dt);render(dt);}
+  if(ROLE==='driver'){if(started&&!paused)step(dt);render(dt);}
+  else{if(started&&!paused)(ROLE==='dispatcher'?stepDisp:stepPass)(dt);renderDisp(dt);}
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
