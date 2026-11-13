@@ -1004,7 +1004,7 @@ function showMsg(t,kind,ms){
 function fmtTime(t){t=Math.floor(t);return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
 
 /* ---- audio ---- */
-let actx,master,noiseGain,noiseFilter,hornGain,rainGain,whiteBuf,muted=false,clackDist=0,pipDone=false,approachDone={};
+let actx,master,noiseGain,noiseFilter,hornGain,rainGain,rainBus,rainAcc=0,whiteBuf,muted=false,clackDist=0,pipDone=false,approachDone={};
 function initAudio(){
   try{
     actx=new (window.AudioContext||window.webkitAudioContext)();
@@ -1019,10 +1019,17 @@ function initAudio(){
     // white noise: rail clacks + rain
     whiteBuf=actx.createBuffer(1,actx.sampleRate,actx.sampleRate);
     const w=whiteBuf.getChannelData(0);for(let i=0;i<w.length;i++)w[i]=Math.random()*2-1;
-    const rs=actx.createBufferSource();rs.buffer=whiteBuf;rs.loop=true;
-    const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=1500;
-    rainGain=actx.createGain();rainGain.gain.value=0;
-    rs.connect(hp);hp.connect(rainGain);rainGain.connect(master);rs.start();
+    // rain: three layers of filtered noise (hiss, body, low patter) swelling gently like gusts, plus random drops (see rainTick)
+    rainGain=actx.createGain();rainGain.gain.value=0;rainGain.connect(master);
+    const gust=actx.createGain();gust.gain.value=0.8;gust.connect(rainGain);
+    const lfo=actx.createOscillator(),lfoDepth=actx.createGain();lfo.frequency.value=0.13;lfoDepth.gain.value=0.22;lfo.connect(lfoDepth);lfoDepth.connect(gust.gain);lfo.start();
+    for(const [type,freq,q,vol,off] of [['bandpass',5200,0.6,0.5,0.1],['bandpass',1500,0.7,0.55,0.4],['lowpass',420,0.7,0.5,0.7]]){
+      const rs=actx.createBufferSource();rs.buffer=whiteBuf;rs.loop=true;
+      const f=actx.createBiquadFilter();f.type=type;f.frequency.value=freq;f.Q.value=q;
+      const lg=actx.createGain();lg.gain.value=vol;
+      rs.connect(f);f.connect(lg);lg.connect(gust);rs.start(0,off);
+    }
+    rainBus=actx.createGain();rainBus.gain.value=0.7;rainBus.connect(master);
     // horn
     hornGain=actx.createGain();hornGain.gain.value=0;
     const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1400;
@@ -1038,6 +1045,22 @@ function clack(vol,delay){   // one wheel hitting a rail joint
   src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.12);
   const o=actx.createOscillator(),og=actx.createGain();o.type='sine';o.frequency.setValueAtTime(95,t);o.frequency.exponentialRampToValueAtTime(52,t+0.09);
   og.gain.setValueAtTime(vol*0.9,t);og.gain.exponentialRampToValueAtTime(0.0001,t+0.11);o.connect(og);og.connect(master);o.start(t);o.stop(t+0.13);
+}
+function rainDrop(){          // one drop hitting a roof / the ground
+  const t=actx.currentTime+Math.random()*0.04,src=actx.createBufferSource();src.buffer=whiteBuf;
+  const bp=actx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1800+Math.random()*5500;bp.Q.value=2+Math.random()*3;
+  const g=actx.createGain();
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.05+Math.random()*0.1,t+0.002);g.gain.exponentialRampToValueAtTime(0.0001,t+0.03+Math.random()*0.03);
+  let out=g;if(actx.createStereoPanner){const pn=actx.createStereoPanner();pn.pan.value=Math.random()*2-1;g.connect(pn);out=pn;}
+  src.connect(bp);bp.connect(g);out.connect(rainBus);src.start(t,Math.random()*0.8);src.stop(t+0.09);
+}
+function rainTick(dt){        // call every frame: fades the rain bed in/out and sprinkles drops
+  if(!actx||!rainGain)return;
+  const on=CFG.weather==='rain';
+  rainGain.gain.setTargetAtTime(on?0.2:0,actx.currentTime,0.5);
+  if(!on)return;
+  rainAcc+=dt;
+  while(rainAcc>0.045){rainAcc-=0.045;rainDrop();}
 }
 function tone(freq,at0,dur,vol){
   if(!actx)return;const t=actx.currentTime+at0,o=actx.createOscillator(),g=actx.createGain();
@@ -1278,7 +1301,7 @@ function stepDisp(dt){
     let near=1e9,spd=0;
     for(const t of aiTrains){const p=t.P.at(t.c),d=Math.hypot(p.x-D.stand.x,p.z-D.stand.z);if(d<near){near=d;spd=t.v;}}
     noiseGain.gain.value=0.02+clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.25;noiseFilter.frequency.value=180+spd*22;
-    rainGain.gain.value=CFG.weather==='rain'?0.07:0;
+    rainTick(dt);
   }
   if(D.time>=SHIFT_LEN)endShift();
 }
@@ -1451,7 +1474,7 @@ function stepPass(dt){
     let near=1e9,spd=0;const rp=rt&&PX.cp?PX.cp:D.stand;
     for(const t of aiTrains){const p=t.P.at(t.c),d=Math.hypot(p.x-rp.x,p.z-rp.z);if(d<near){near=d;spd=t.v;}}
     noiseGain.gain.value=0.02+clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.25;noiseFilter.frequency.value=180+spd*22;
-    rainGain.gain.value=CFG.weather==='rain'?0.07:0;
+    rainTick(dt);
     if(rt&&rt.v>0.8&&!LINES[rt.id].tram){clackDist+=rt.v*dt;while(clackDist>=18){clackDist-=18;const vol=Math.min(0.3,0.05+rt.v/28*0.25);clack(vol,0);clack(vol*0.8,2.6/Math.max(rt.v,2));}}
   }
 }
@@ -1626,7 +1649,7 @@ function step(dt){
   if(actx){
     noiseGain.gain.value=0.03+Math.min(1,v/28)*0.22;noiseFilter.frequency.value=180+v*22;
     hornGain.gain.setTargetAtTime(keys.KeyH?0.1:0,actx.currentTime,0.03);
-    rainGain.gain.value=CFG.weather==='rain'?0.07:0;
+    rainTick(dt);
     if(v>0.8){   // rail-joint clacks every 18 m, two axles per bogie
       clackDist+=v*dt;
       while(clackDist>=18){clackDist-=18;const vol=Math.min(0.4,0.07+v/28*0.3);clack(vol,0);clack(vol*0.8,2.6/Math.max(v,2));}
