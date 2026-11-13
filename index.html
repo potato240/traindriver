@@ -180,7 +180,7 @@
     <div class="opts">
       <label>Role <select id="selRole"><option value="driver">Train driver</option><option value="dispatcher">Dispatcher</option><option value="passenger">Passenger</option></select></label>
       <label id="lblStation" class="hidden">Station <select id="selStation"></select></label>
-      <label id="lblLine">Line <select id="selLine"><option value="aqua">Sebford Aqua</option><option value="airlink">Sebford Airlink</option><option value="metro">Sebford Metro</option></select></label>
+      <label id="lblLine">Line <select id="selLine"><option value="aqua">Sebford Aqua</option><option value="airlink">Sebford Airlink</option><option value="metro">Sebford Metro</option><option value="moor1">Moorside County Route 1</option><option value="moor2">Moorside County Route 2</option></select></label>
       <label id="lblDir">Direction <select id="selRoute"></select></label>
       <label>Time <select id="selTime"><option value="day">Day</option><option value="dusk">Dusk</option><option value="night">Night</option></select></label>
       <label>Weather <select id="selWeather"><option value="clear">Clear</option><option value="rain">Rain</option><option value="fog">Fog</option></select></label>
@@ -221,10 +221,13 @@ function offsetRight(wps,d){   // shift a waypoint list sideways (right of trave
     return [Math.round((p[0]-tz*d)*100)/100,Math.round((p[1]+tx*d)*100)/100];
   });
 }
+const MOOR_STEM=[[50,460],[-50,460],[-100,460],[-200,460],[-350,460],[-500,460],[-650,460]];      // Moorside County lines: shared stem out of Sebford Wharf Road
+const MOOR_SHARED=[[-2250,-480],[-2350,-480],[-2450,-480]];                                    // ... and the shared stretch through Longbay West
 const LINES = {
   aqua: {
     id:'aqua', name:'Sebford Aqua', first:'Sebford', second:'Aqua', short:'Aqua line service',
     color:'#00b4c0', colorHex:0x00b4c0, maxSet:31.3, side:-1,
+    voice:{kind:'female',n:0,pitch:1.15,rate:0.95,lang:'en-GB'}, jingle:[[659,0,.35,.16],[523,.3,.35,.16],[784,.6,.55,.16]],
     cars:4, carLen:19, platHalf:70, stopAhead:60, platH:1.0, eye:2.95,
     stand:{ahead:55,off:4.2,poMin:2.5,poMax:7.2,walk:66,eyeY:2.7},      // side: platforms on the left when running outbound
     wp: AQUA_SHARED.concat([
@@ -240,6 +243,7 @@ const LINES = {
   airlink: {
     id:'airlink', name:'Sebford Airlink', first:'Sebford', second:'Airlink', short:'Airlink service',
     color:'#f5821f', colorHex:0xf5821f, maxSet:35.8, side:1,
+    voice:{kind:'male',n:0,pitch:0.7,rate:1.05,lang:'en-GB'}, jingle:[[988,0,.3,.15],[784,.25,.3,.15],[988,.5,.3,.15],[1319,.75,.6,.15]],
     cars:4, carLen:19, platHalf:70, stopAhead:60, platH:1.0, eye:2.95,
     stand:{ahead:55,off:4.2,poMin:2.5,poMax:7.2,walk:66,eyeY:2.7},       // platforms on the right when running outbound
     wp: offsetRight(AQUA_SHARED,4).concat([
@@ -258,6 +262,7 @@ const LINES = {
   metro: {
     id:'metro', name:'Sebford Metro', first:'Sebford', second:'Metro', short:'Metro tram service',
     color:'#7b5cff', colorHex:0x7b5cff, maxSet:16, side:1, tram:true,
+    voice:{kind:'other',n:0,pitch:1.35,rate:1.08,lang:'en-US'}, jingle:[[1047,0,.16,.15],[1047,.22,.16,.15],[1568,.5,.4,.14]],
     cars:2, carLen:13, platHalf:18, stopAhead:17, platH:0.3, eye:2.1,
     stand:{ahead:17,off:2.9,poMin:1.7,poMax:4.0,walk:15,eyeY:2.0},
     wp:[[-250,520],[-175,520],[-100,520],[0,520],[200,520],[400,520],[600,545],[780,590],[870,620],[950,620],[1030,620],
@@ -271,13 +276,45 @@ const LINES = {
       { name:'Bars Creek',         wp:[2150,680] },
       { name:'Newtown',            wp:[2500,950] },
       { name:'Low Row',            wp:[2800,1300] }]
+  },
+  moor1: {
+    id:'moor1', name:'Moorside County Regional - Route 1', first:'Moorside County', second:'Route 1', short:'Moorside County Regional route 1 service',
+    color:'#2e9e5b', colorHex:0x2e9e5b, maxSet:29, side:-1, noShed:true,
+    voice:{kind:'male',n:1,pitch:0.85,rate:0.92,lang:'en-GB'}, jingle:[[440,0,.4,.16],[587,.35,.6,.16]],
+    cars:3, carLen:20, platHalf:55, stopAhead:47, platH:1.0, eye:2.9,
+    stand:{ahead:44,off:4.2,poMin:2.5,poMax:7.2,walk:50,eyeY:2.7},
+    wp: MOOR_STEM.concat([[-800,470],[-950,490],[-1150,500],[-1350,470],[-1550,380],[-1700,300],[-1850,160],[-1980,-80],[-2080,-300],[-2150,-440]],
+      MOOR_SHARED,[[-2550,-480],[-2650,-480],[-2750,-470],[-2850,-470]]),
+    stops:[
+      { name:'Sebford Wharf Road', wp:[-100,460] },
+      { name:'Feymere',            wp:[-1150,500] },
+      { name:'Langland Town',      wp:[-1700,300] },
+      { name:'Longbay West',       wp:[-2350,-480] },
+      { name:'Longbay Victoria',   wp:[-2750,-470] }]
+  },
+  moor2: {
+    id:'moor2', name:'Moorside County Regional - Route 2', first:'Moorside County', second:'Route 2', short:'Moorside County Regional route 2 service',
+    color:'#d64545', colorHex:0xd64545, maxSet:29, side:1, noShed:true,
+    voice:{kind:'female',n:1,pitch:1.0,rate:1.0,lang:'en-GB'}, jingle:[[587,0,.3,.16],[440,.3,.3,.16],[349,.6,.6,.16]],
+    cars:3, carLen:20, platHalf:55, stopAhead:47, platH:1.0, eye:2.9,
+    stand:{ahead:44,off:4.2,poMin:2.5,poMax:7.2,walk:50,eyeY:2.7},
+    wp: offsetRight(MOOR_STEM,4).concat([[-800,440],[-950,380],[-1100,320],[-1250,250],[-1450,130],[-1650,-60],[-1850,-250],[-2000,-380],[-2120,-460]],
+      offsetRight(MOOR_SHARED,4),[[-2550,-500],[-2620,-540],[-2680,-640],[-2710,-780],[-2720,-950],[-2710,-1100],[-2680,-1250],[-2620,-1380],[-2540,-1520],[-2450,-1620],[-2380,-1700]]),
+    stops:[
+      { name:'Sebford Wharf Road', wp:[-100,456] },
+      { name:'Forth Park',         wp:[-1100,320] },
+      { name:'Leaton-on-Trent',    wp:[-1650,-60] },
+      { name:'Longbay West',       wp:[-2350,-484] },
+      { name:'Longbay South',      wp:[-2700,-800] },
+      { name:'Lee Forest',         wp:[-2710,-1150] },
+      { name:'Lee Central',        wp:[-2540,-1520] }]
   }
 };
 
 /* settings come from the URL so line / route / time / weather survive a reload */
 const Q=new URLSearchParams(location.search);
 const CFG={
-  line:['aqua','airlink','metro'].includes(Q.get('line'))?Q.get('line'):'aqua',
+  line:Object.keys(LINES).includes(Q.get('line'))?Q.get('line'):'aqua',
   route:Q.get('route')==='return'?'return':'out',
   time:['day','dusk','night'].includes(Q.get('time'))?Q.get('time'):'day',
   weather:['clear','rain','fog'].includes(Q.get('weather'))?Q.get('weather'):'clear',
@@ -328,10 +365,10 @@ function makePath(wps){
   function railPt(s,off){const p=at(s);return {x:p.x-p.tz*off,z:p.z+p.tx*off,tx:p.tx,tz:p.tz};}   // off: right-positive
   return {Px,Pz,L,Tx,Tz,YAW,at,railPt};
 }
-const LINE_IDS=['aqua','airlink','metro'];
+const LINE_IDS=['aqua','airlink','metro','moor1','moor2'];
 const OUT={};for(const id of LINE_IDS)OUT[id]=makePath(LINES[id].wp);   // every network, outbound direction
 for(const id of LINE_IDS){
-  const P=OUT[id];P.id=id;P.side=LINES[id].side;P.cen=LINES[id].tram?-1e9:nearestIdx(P,0,0);
+  const P=OUT[id];P.id=id;P.side=LINES[id].side;P.cen=(LINES[id].tram||LINES[id].noShed)?-1e9:nearestIdx(P,0,0);
   P.stops=LINES[id].stops.map(x=>Object.assign({},x,{s:nearestIdx(P,x.wp[0],x.wp[1])}));
 }
 const P0=REVERSE?makePath(WAYPOINTS):OUT[CFG.line];     // the path you drive (reversed on the return run)
@@ -392,7 +429,7 @@ rain.frustumCulled=false;rain.visible=false;scene.add(rain);
 const ENV_WIN=[];     // building window materials (glow at night)
 let headBase=0;       // headlight intensity chosen by time/weather
 /* ground, sea, beach */
-const ground=new THREE.Mesh(new THREE.PlaneGeometry(6000,6000),lam(0x7db35c));ground.rotation.x=-Math.PI/2;ground.position.set(400,-0.3,1000);scene.add(ground);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(12000,12000),lam(0x7db35c));ground.rotation.x=-Math.PI/2;ground.position.set(-800,-0.3,500);scene.add(ground);
 const SEA=[-800,450,550,1040], BEACH=[-800,470,1040,1078], DOCKWATER=[350,1100,2140,2700], QUAY=[400,900,2092,2142];
 function flatRect(r,y,mat,parent){const m=new THREE.Mesh(new THREE.PlaneGeometry(r[1]-r[0],r[3]-r[2]),mat);m.rotation.x=-Math.PI/2;m.position.set((r[0]+r[1])/2,y,(r[2]+r[3])/2);(parent||scene).add(m);return m;}
 flatRect(SEA,-0.05,lam(0x2f86c4));
@@ -785,14 +822,93 @@ const noTreeCircles=[];     // {x,z,r} places trees must keep out of
   row(low-230,low-2,6.8,[-13.5,13.5],terrace);
 }
 
+/* ---- Moorside County: villages, a river, a pond, a forest and the coast at Longbay ---- */
+const SEA2=[-4300,-2970,-1250,420],BEACH2=[-2970,-2905,-1250,420];
+noTree.push(SEA2,BEACH2);
+{
+  const R1=OUT.moor1,R2=OUT.moor2,sOf=(P,n)=>P.stops.find(x=>x.name===n).s;
+  flatRect(SEA2,-0.05,lam(0x2f86c4));flatRect(BEACH2,-0.15,lam(0xe6d6a2));
+  const wallM=[lam(0xe9dcc4),lam(0xd9c3a0),lam(0xcfd6c0),lam(0xe8cfc4),lam(0xbfae8f)],roofM=[lam(0x8a3b2b),lam(0x4d5560),lam(0x7a4a3a)];
+  const stone=lam(0xb9ad98),slateM=lam(0x3f4650);
+  const wet=(x,z)=>inRect(x,z,SEA2)||inRect(x,z,BEACH2);
+  function cottage(x,z,yaw){
+    const w=rr(8,12),d=rr(7,10),h=rr(4.5,6.5);
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),wallM[Math.floor(rnd()*wallM.length)]);m.position.set(x,h/2,z);m.rotation.y=yaw;scene.add(m);
+    const r=new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.72,3,4),roofM[Math.floor(rnd()*roofM.length)]);r.position.set(x,h+1.5,z);r.rotation.y=yaw+Math.PI/4;scene.add(r);
+    noTreeCircles.push({x,z,r:12});
+  }
+  function village(P,name,count,r0,r1){
+    const c=P.at(sOf(P,name));let placed=0;const yaw0=Math.atan2(c.tx,c.tz);
+    for(let i=0;i<count*8&&placed<count;i++){
+      const a=rnd()*Math.PI*2,r=rr(r0,r1),x=c.x+Math.cos(a)*r,z=c.z+Math.sin(a)*r;
+      if(nearTrack(x,z,26)||wet(x,z)||inRect(x,z,SEA)||inRect(x,z,CENTRAL_ZONE))continue;
+      cottage(x,z,yaw0+(rnd()<0.5?0:Math.PI/2));placed++;
+    }
+  }
+  village(R1,'Feymere',26,45,170);
+  village(R1,'Langland Town',64,40,230);
+  village(R2,'Forth Park',16,60,200);
+  village(R2,'Leaton-on-Trent',28,45,190);
+  village(R1,'Longbay West',30,45,190);
+  village(R1,'Longbay Victoria',44,45,230);
+  village(R2,'Longbay South',20,50,180);
+  village(R2,'Lee Forest',6,70,160);
+  village(R2,'Lee Central',32,45,200);
+  // Langland Town church
+  {const c=R1.railPt(sOf(R1,'Langland Town')+20,R1.side*38);box(7,14,12,stone,c.x,7,c.z);box(5,26,5,stone,c.x,13,c.z+8);const sp=new THREE.Mesh(new THREE.ConeGeometry(3.6,10,4),slateM);sp.position.set(c.x,31,c.z+8);sp.rotation.y=Math.PI/4;scene.add(sp);}
+  // Forth Park: a pond beside the station
+  {const c=R2.railPt(sOf(R2,'Forth Park')+10,R2.side*140);const pond=new THREE.Mesh(new THREE.CircleGeometry(55,28),lam(0x2f86c4));pond.rotation.x=-Math.PI/2;pond.position.set(c.x,-0.04,c.z);scene.add(pond);noTreeCircles.push({x:c.x,z:c.z,r:62});}
+  // Leaton-on-Trent: the river and a girder bridge just beyond the station
+  {
+    const s0=sOf(R2,'Leaton-on-Trent')+150,p=R2.at(s0),g=new THREE.Group(),yaw=Math.atan2(p.tx,p.tz);
+    g.position.set(p.x,0,p.z);g.rotation.y=yaw;scene.add(g);
+    box(220,0.12,26,lam(0x2f7fa8),0,-0.1,0,g);box(220,0.05,36,lam(0x9a8a64),0,-0.16,0,g);
+    for(const x of [-3.0,3.0])box(0.4,2.4,28,lam(0x6f7a84),x,1.1,0,g);
+    for(let k=-100;k<=100;k+=18)noTreeCircles.push({x:p.x+Math.cos(yaw)*k,z:p.z-Math.sin(yaw)*k,r:20});
+  }
+  // Lee Forest: a dense wood around the station
+  {
+    const c=R2.at(sOf(R2,'Lee Forest')),N=1400,trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),N),leaf=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x24633a),N),d=new THREE.Object3D();
+    let n=0;
+    for(let i=0;i<N*4&&n<N;i++){
+      const a=rnd()*Math.PI*2,r=Math.sqrt(rnd())*420,x=c.x+Math.cos(a)*r,z=c.z+Math.sin(a)*r;
+      if(nearTrack(x,z,15)||wet(x,z)||noTreeCircles.some(q=>(q.x-x)**2+(q.z-z)**2<q.r*q.r))continue;
+      const k=rr(0.9,1.7);d.position.set(x,1.5*k,z);d.scale.set(k,k,k);d.updateMatrix();trunk.setMatrixAt(n,d.matrix);
+      d.position.set(x,6.6*k,z);d.updateMatrix();leaf.setMatrixAt(n,d.matrix);n++;
+    }
+    trunk.count=n;leaf.count=n;scene.add(trunk,leaf);
+  }
+  // Lee Central: a small town centre
+  {
+    const P=R2,c=P.at(sOf(P,'Lee Central'));
+    for(let i=0;i<16;i++){
+      const a=rnd()*Math.PI*2,r=rr(50,150),x=c.x+Math.cos(a)*r,z=c.z+Math.sin(a)*r;
+      if(nearTrack(x,z,40)||wet(x,z))continue;
+      addBuilding(x,z,rr(16,24),rr(16,24),rr(12,36),BMATS[Math.floor(rnd()*BMATS.length)]);noTreeCircles.push({x,z,r:18});
+    }
+  }
+  // Longbay Victoria: a grand stone terminus with a clock tower, right by the sea
+  {
+    const p=R1.at(R1.L-1),g=new THREE.Group(),yaw=Math.atan2(p.tx,p.tz);
+    g.position.set(p.x,0,p.z);g.rotation.y=yaw;scene.add(g);
+    box(34,13,40,stone,0,6.5,30,g);box(36,1,42,slateM,0,13.5,30,g);
+    const roof=new THREE.Mesh(new THREE.CylinderGeometry(12,12,40,3),slateM);roof.rotation.x=Math.PI/2;roof.scale.set(1.45,1,0.4);roof.position.set(0,15,30);g.add(roof);
+    box(6,30,6,stone,-13,15,12,g);
+    const clk=document.createElement('canvas');clk.width=clk.height=128;const q=clk.getContext('2d');
+    q.fillStyle='#f3efe2';q.beginPath();q.arc(64,64,60,0,7);q.fill();q.strokeStyle='#222';q.lineWidth=5;q.stroke();q.lineWidth=6;q.beginPath();q.moveTo(64,64);q.lineTo(64,24);q.moveTo(64,64);q.lineTo(92,76);q.stroke();
+    const face=new THREE.Mesh(new THREE.PlaneGeometry(4.2,4.2),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(clk)}));face.position.set(-13,24,8.95);face.rotation.y=Math.PI;g.add(face);
+    const sp=new THREE.Mesh(new THREE.ConeGeometry(4.6,9,4),slateM);sp.position.set(-13,34.5,12);sp.rotation.y=Math.PI/4;g.add(sp);
+  }
+}
+
 /* ---- trees ---- */
 {
-  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),7000);
-  const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),7000);
-  const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),7000);
+  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4,0.55,3,6),lam(0x6b4a2b),10000);
+  const leaf =new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x2f7a3d),10000);
+  const leaf2=new THREE.InstancedMesh(new THREE.ConeGeometry(2.6,7.5,7),lam(0x4d9a45),10000);
   const d=new THREE.Object3D();let a=0,b=0;
-  for(let i=0;i<26000&&a+b<7000;i++){
-    const x=rr(-1800,3100),z=rr(-550,3500);
+  for(let i=0;i<48000&&a+b<10000;i++){
+    const west=i%3===0,x=west?rr(-3500,-1700):rr(-1800,3100),z=west?rr(-1900,1000):rr(-550,3500);
     if(nearTrack(x,z,14))continue;
     if(noTreeCircles.some(c=>(c.x-x)**2+(c.z-z)**2<c.r*c.r))continue;
     let bad=false;for(const r of noTree)if(inRect(x,z,r)){bad=true;break;}if(bad)continue;
@@ -926,27 +1042,25 @@ const chimeOpen=()=>{tone(880,0,.5,.2);tone(660,.38,.8,.2);};            // ding
 const chimeClose=()=>{tone(1100,0,.14,.14);tone(1100,.28,.14,.14);tone(1100,.56,.14,.14);};  // door-closing pips
 const chimeAnn=(id)=>{                                                                         // announcement jingle (differs per line)
   id=id||LINE.id;
-  if(id==='airlink'){tone(988,0,.3,.15);tone(784,.25,.3,.15);tone(988,.5,.3,.15);tone(1319,.75,.6,.15);}
-  else if(id==='metro'){tone(1047,0,.16,.15);tone(1047,.22,.16,.15);tone(1568,.5,.4,.14);}
-  else{tone(659,0,.35,.16);tone(523,.3,.35,.16);tone(784,.6,.55,.16);}
+  for(const [f,at0,dur,vol] of LINES[id].jingle)tone(f,at0,dur,vol);
 };
-/* each line has its own announcer: Aqua a lighter UK voice, Airlink a deeper voice, Metro a bright US-style voice */
+/* each line has its own announcer (voice kind, pitch and speed are set per line in LINES) */
 function pickVoice(id){
   id=id||LINE.id;
   const vs=speechSynthesis.getVoices().filter(x=>/^en/i.test(x.lang));
   if(!vs.length)return null;
-  const gb=vs.filter(x=>/en-GB/i.test(x.lang)),pool=gb.concat(vs.filter(x=>!gb.includes(x)));
+  const cfg=LINES[id].voice,gb=vs.filter(x=>/en-GB/i.test(x.lang)),pool=gb.concat(vs.filter(x=>!gb.includes(x)));
   const female=/female|zira|hazel|susan|samantha|serena|libby|sonia|karen|moira|fiona|tessa|heera/i;
   const male=/\bmale\b|david|george|mark|daniel|guy|ryan|james|alex|fred|thomas|oliver|arthur|rishi/i;
-  const hit=id==='metro'?(vs.find(x=>!/en-GB/i.test(x.lang)&&/en-(US|AU|IE|NZ|ZA|IN|CA)/i.test(x.lang)&&female.test(x.name))||vs.find(x=>!/en-GB/i.test(x.lang))||pool[2]||pool[0]):pool.find(x=>(id==='airlink'?male:female).test(x.name));
-  return hit||(id==='airlink'?(pool[1]||pool[0]):pool[0]);
+  const list=cfg.kind==='other'?vs.filter(x=>!/en-GB/i.test(x.lang)):pool.filter(x=>(cfg.kind==='male'?male:female).test(x.name));
+  return list[cfg.n]||list[0]||pool[cfg.n]||pool[0];
 }
 function speak(text,id){
   id=id||LINE.id;
   if(muted||!('speechSynthesis' in window))return;
   try{
-    speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=id==='metro'?'en-US':'en-GB';
-    u.pitch=id==='airlink'?0.7:id==='metro'?1.35:1.15;u.rate=id==='airlink'?1.05:id==='metro'?1.08:0.95;
+    const cfg=LINES[id].voice;
+    speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=cfg.lang;u.pitch=cfg.pitch;u.rate=cfg.rate;
     const vo=pickVoice(id);if(vo)u.voice=vo;
     speechSynthesis.speak(u);
   }catch(e){}
@@ -1004,7 +1118,7 @@ function updateRain(dt){
  * ================================================================== */
 const SHIFT_LEN=360;                                   // seconds per shift
 const REQ={whistle:'WHISTLE only',light:'GREEN LIGHT only',both:'WHISTLE + GREEN LIGHT'};
-const AI_CRUISE={aqua:24,airlink:30,metro:11};
+const AI_CRUISE={aqua:24,airlink:30,metro:11,moor1:27,moor2:27};
 const ALL_STATIONS=(()=>{const seen=[];for(const id of LINE_IDS)for(const st of LINES[id].stops)if(!seen.includes(st.name))seen.push(st.name);return seen;})();
 const D={time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,mlook:0,alook:0,base:0,stand:{x:0,z:0},lines:[],name:'',log:[]};
 let aiTrains=[],blowTimer=0;
