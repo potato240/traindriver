@@ -59,6 +59,34 @@
   kbd{background:#20404c;border:1px solid #3a6676;border-radius:4px;padding:1px 7px;font-family:inherit;font-size:13px}
   button{background:var(--aqua);color:#032026;border:0;border-radius:8px;padding:12px 26px;font-size:17px;font-weight:700;cursor:pointer}
   #end{display:none}
+  /* dispatcher role */
+  .dispOnly,#dtools{display:none}
+  body.disp .dispOnly{display:block}
+  body.disp #dtools{display:flex}
+  body.disp #next,body.disp #routebar,body.disp #hud,body.disp #ahead{display:none}
+  body.disp #msg{top:190px}
+  #dtop{position:fixed;top:12px;left:12px;padding:10px 14px;min-width:210px}
+  #dtop small,#dorder small{display:block;opacity:.65;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  #dtop b{font-size:19px}
+  #dorder{position:fixed;top:12px;left:50%;transform:translateX(-50%);padding:12px 20px;min-width:340px;text-align:center}
+  #dtrain{font-size:18px;font-weight:700}
+  #dstate{opacity:.85;margin:2px 0 6px;min-height:18px}
+  #dreq{font-size:24px;font-weight:800;color:#ffd23f;min-height:30px}
+  #dboard{position:fixed;left:12px;bottom:14px;padding:10px 14px;min-width:270px;font-size:13px}
+  #dboard .row{margin:4px 0;display:flex;gap:8px;align-items:center}
+  #dboard i{width:10px;height:10px;border-radius:50%;display:inline-block}
+  #dtools{position:fixed;right:14px;bottom:14px;gap:12px;align-items:flex-end}
+  .tool{padding:12px 16px;text-align:center;min-width:120px;cursor:pointer;user-select:none;position:relative}
+  .tool b{display:block;margin-top:4px}
+  .tool kbd{margin-top:4px;display:inline-block}
+  #lightBtn svg{transition:transform .2s}
+  #lightBtn.on{border-color:#5be3a0;box-shadow:0 0 18px rgba(91,227,160,.6)}
+  #lightBtn.on svg{transform:translateY(-8px)}
+  #lightBtn.on #disc{fill:#2ee67f;filter:drop-shadow(0 0 8px #2ee67f)}
+  .wave{position:absolute;left:50%;top:30px;width:20px;height:20px;margin-left:-10px;border-radius:50%;border:3px solid #fff;opacity:0;pointer-events:none}
+  #whistleBtn.blow{border-color:#ffd23f}
+  #whistleBtn.blow .wave{animation:wave .8s ease-out}
+  @keyframes wave{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(5)}}
   .opts{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 18px}
   .opts label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;display:flex;flex-direction:column;gap:4px}
   .opts select{background:#14303b;color:#fff;border:1px solid #3a6676;border-radius:6px;padding:7px 10px;font-size:14px;text-transform:none;letter-spacing:0}
@@ -84,11 +112,38 @@
   </div>
 </div>
 
+<div id="dtop" class="dispOnly panel"><small>Dispatching at</small><b id="dstation">-</b><small style="margin-top:6px">Shift left</small><b id="dleft">6:00</b></div>
+<div id="dorder" class="dispOnly panel">
+  <small>Train at your platform</small>
+  <div id="dtrain">No train at the platform</div>
+  <div id="dstate"></div>
+  <div id="dreq"></div>
+</div>
+<div id="dboard" class="dispOnly panel"></div>
+<div id="dtools">
+  <div id="whistleBtn" class="tool panel">
+    <svg viewBox="0 0 64 40" width="62" height="40"><rect x="2" y="12" width="30" height="14" rx="3" fill="#cfd6db"/><circle cx="44" cy="22" r="15" fill="#e8edf0"/><circle cx="44" cy="22" r="5" fill="#2b3a44"/></svg>
+    <b>Whistle</b><kbd>Space</kbd><span class="wave"></span>
+  </div>
+  <div id="lightBtn" class="tool panel">
+    <svg viewBox="0 0 60 92" width="48" height="74"><rect x="27" y="34" width="6" height="56" rx="2" fill="#8a6a48"/><circle id="disc" cx="30" cy="22" r="19" fill="#1f6b44" stroke="#fff" stroke-width="3"/></svg>
+    <b>Green light</b><kbd>G</kbd>
+  </div>
+</div>
+
 <div id="start" class="overlay">
   <div class="card panel">
     <h1 id="title">Sebford <span>Aqua</span></h1>
     <p id="intro"></p>
-    <table>
+    <table id="ctlDisp" class="hidden">
+      <tr><td><kbd>Space</kbd></td><td>Blow the whistle</td></tr>
+      <tr><td><kbd>G</kbd></td><td>Raise / lower the green light (round board on a pole)</td></tr>
+      <tr><td>Mouse / <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td>Look around the platform</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Mute all sound</td></tr>
+      <tr><td><kbd>T</kbd> / <kbd>Y</kbd></td><td>Change time of day / weather</td></tr>
+      <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart the shift</td></tr>
+    </table>
+    <table id="ctlDriver">
       <tr><td><kbd>W</kbd> / <kbd>&uarr;</kbd></td><td>Raise the set speed - the train speeds up to it</td></tr>
       <tr><td><kbd>S</kbd> / <kbd>&darr;</kbd></td><td>Lower the set speed - the train slows down to it</td></tr>
       <tr><td><kbd>Space</kbd></td><td>Emergency stop</td></tr>
@@ -99,8 +154,10 @@
       <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart</td></tr>
     </table>
     <div class="opts">
-      <label>Line <select id="selLine"><option value="aqua">Sebford Aqua</option><option value="airlink">Sebford Airlink</option></select></label>
-      <label>Direction <select id="selRoute"></select></label>
+      <label>Role <select id="selRole"><option value="driver">Train driver</option><option value="dispatcher">Dispatcher</option></select></label>
+      <label id="lblStation" class="hidden">Station <select id="selStation"></select></label>
+      <label id="lblLine">Line <select id="selLine"><option value="aqua">Sebford Aqua</option><option value="airlink">Sebford Airlink</option></select></label>
+      <label id="lblDir">Direction <select id="selRoute"></select></label>
       <label>Time <select id="selTime"><option value="day">Day</option><option value="dusk">Dusk</option><option value="night">Night</option></select></label>
       <label>Weather <select id="selWeather"><option value="clear">Clear</option><option value="rain">Rain</option><option value="fog">Fog</option></select></label>
     </div>
@@ -181,8 +238,12 @@ const CFG={
   line:Q.get('line')==='airlink'?'airlink':'aqua',
   route:Q.get('route')==='return'?'return':'out',
   time:['day','dusk','night'].includes(Q.get('time'))?Q.get('time'):'day',
-  weather:['clear','rain','fog'].includes(Q.get('weather'))?Q.get('weather'):'clear'
+  weather:['clear','rain','fog'].includes(Q.get('weather'))?Q.get('weather'):'clear',
+  role:Q.get('role')==='dispatcher'?'dispatcher':'driver',
+  station:Q.get('station')||'Sebford Central'
 };
+const ROLE=CFG.role;
+if(ROLE==='dispatcher')document.body.classList.add('disp');
 const LINE=LINES[CFG.line], AIRLINK=CFG.line==='airlink';
 const WAYPOINTS=LINE.wp.map(p=>p.slice());
 const STATIONS=LINE.stops.map(x=>Object.assign({},x));
@@ -603,10 +664,9 @@ function updateFlyer(){
 }
 
 /* ---- the train ---- */
-const train=new THREE.Group();scene.add(train);
-const cars=[];
-{
-  const white=lam(0xf4f6f7),aqua=lam(LINE.colorHex),glass=lam(0x1b2a33),roof=lam(0x9aa3a8),dark=lam(0x25292c);
+function makeTrain(colorHex){
+  const train=new THREE.Group(),cars=[];scene.add(train);
+  const white=lam(0xf4f6f7),aqua=lam(colorHex),glass=lam(0x1b2a33),roof=lam(0x9aa3a8),dark=lam(0x25292c);
   for(let c=0;c<TRAIN_CARS;c++){
     const g=new THREE.Group();
     box(2.8,3.0,CAR_LEN,white,0,2.2,0,g);
@@ -617,6 +677,15 @@ const cars=[];
     if(c===0){box(2.5,1.3,0.06,glass,0,2.9,CAR_LEN/2+0.01,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xfff6c8}),-0.9,1.5,CAR_LEN/2+0.02,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xfff6c8}),0.9,1.5,CAR_LEN/2+0.02,g);}
     if(c===TRAIN_CARS-1){box(2.5,1.3,0.06,glass,0,2.9,-CAR_LEN/2-0.01,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xc4251c}),-0.9,1.5,-CAR_LEN/2-0.02,g);box(0.4,0.3,0.06,new THREE.MeshBasicMaterial({color:0xc4251c}),0.9,1.5,-CAR_LEN/2-0.02,g);}
     train.add(g);cars.push(g);
+  }
+  return {group:train,cars};
+}
+const PT=makeTrain(LINE.colorHex),train=PT.group,cars=PT.cars;
+function placeCars(tr,P,c,dir){   // another train on path P: c = centre of the train along the path, dir = +1 / -1 direction of travel
+  for(let i=0;i<TRAIN_CARS;i++){
+    const sc=c+dir*(1.5-i)*(CAR_LEN+CAR_GAP),a=P.at(sc+dir*6),b=P.at(sc-dir*6);
+    tr.cars[i].position.set((a.x+b.x)/2,0,(a.z+b.z)/2);
+    tr.cars[i].rotation.y=Math.atan2(a.x-b.x,a.z-b.z);
   }
 }
 function placeTrain(s){
@@ -748,7 +817,7 @@ function applyEnv(){
   headBase=e.head+(w==='fog'?1.8:0)+(w==='rain'&&CFG.time==='day'?1:0);
   rain.visible=(w==='rain');
 }
-function syncURL(){const p=new URLSearchParams();p.set('line',CFG.line);p.set('route',CFG.route);p.set('time',CFG.time);p.set('weather',CFG.weather);try{history.replaceState(null,'','?'+p);}catch(e){}}
+function syncURL(){const p=new URLSearchParams();p.set('role',CFG.role);p.set('station',CFG.station);p.set('line',CFG.line);p.set('route',CFG.route);p.set('time',CFG.time);p.set('weather',CFG.weather);try{history.replaceState(null,'','?'+p);}catch(e){}}
 function setEnv(time,weather){
   if(time)CFG.time=time;if(weather)CFG.weather=weather;
   applyEnv();syncURL();$('selTime').value=CFG.time;$('selWeather').value=CFG.weather;
@@ -766,11 +835,195 @@ function updateRain(dt){
   rainGeo.attributes.position.needsUpdate=true;
 }
 
+/* ================================================================== *
+ *  DISPATCHER ROLE
+ *  You stand on the platform at one station. One train per line shuttles back and forth along its
+ *  line. When a train at your platform has finished boarding and closed its doors it waits for you:
+ *  the order panel says which signal to give - whistle, green light (round board on a pole), or both.
+ * ================================================================== */
+const SHIFT_LEN=360;                                   // seconds per shift
+const REQ={whistle:'WHISTLE only',light:'GREEN LIGHT only',both:'WHISTLE + GREEN LIGHT'};
+const AI_CRUISE={aqua:24,airlink:30};
+const ALL_STATIONS=(()=>{const seen=[];for(const id of ['aqua','airlink'])for(const st of LINES[id].stops)if(!seen.includes(st.name))seen.push(st.name);return seen;})();
+const D={time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,mlook:0,alook:0,base:0,stand:{x:0,z:0},lines:[],name:'',log:[]};
+let aiTrains=[],blowTimer=0;
+
+function whistleSound(){
+  if(!actx)return;
+  const t=actx.currentTime,g=actx.createGain();
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.22,t+0.03);g.gain.setValueAtTime(0.22,t+0.55);g.gain.exponentialRampToValueAtTime(0.0001,t+0.8);
+  const lfo=actx.createOscillator(),lg=actx.createGain();lfo.frequency.value=36;lg.gain.value=150;lfo.connect(lg);
+  for(const f of [2500,2640]){const o=actx.createOscillator();o.type='sine';o.frequency.value=f;lg.connect(o.frequency);o.connect(g);o.start(t);o.stop(t+0.85);}
+  lfo.start(t);lfo.stop(t+0.85);g.connect(master);
+}
+function resetDisp(){
+  const name=ALL_STATIONS.includes(CFG.station)?CFG.station:'Sebford Central';
+  D.name=name;D.lines=['aqua','airlink'].filter(id=>OUT[id].stops.some(x=>x.name===name));
+  const P=OUT[D.lines[0]],st=P.stops.find(x=>x.name===name),sp=Math.min(P.L-3,st.s+55);
+  D.stand=P.railPt(sp,P.side*4.2);D.base=P.YAW[sp];            // stand near the end of the platform, looking back along the tracks
+  Object.assign(D,{time:0,score:0,done:0,fast:0,wrong:0,early:0,lightUp:false,lightUpAt:-9,whistleT:-9,lockout:0,lastEarly:-9,over:false,log:[]});
+  for(const t of aiTrains)scene.remove(t.tr.group);
+  aiTrains=['aqua','airlink'].map((id,k)=>{
+    const P=OUT[id],stops=P.stops,mi=stops.findIndex(x=>x.name===name);
+    let idx,dir=1;
+    if(mi>=0&&id===D.lines[0])idx=mi;                              // the first line starts with a train at your platform
+    else if(mi>=0){if(mi+1<stops.length){idx=mi+1;dir=-1;}else{idx=mi-1;dir=1;}}
+    else idx=Math.min(1,stops.length-1);
+    if(idx===0)dir=1;if(idx===stops.length-1)dir=-1;
+    return {id,P,tr:makeTrain(LINES[id].colorHex),idx,dir,c:stops[idx].s,v:0,state:'dwell',timer:3+k*2,required:'light',readyAt:0};
+  });
+  s=STATIONS[0].target;v=0;
+  $('end').style.display='none';
+  $('dstation').textContent=name;
+  $('lightBtn').classList.remove('on');
+}
+const myTrain=()=>aiTrains.find(t=>D.lines.includes(t.id)&&t.P.stops[t.idx].name===D.name&&t.state!=='run');
+function pickReq(){const r=Math.random();return r<0.34?'whistle':r<0.67?'light':'both';}
+function departTrain(t){
+  const last=t.P.stops.length-1;
+  if(t.idx===0)t.dir=1;else if(t.idx===last)t.dir=-1;         // crew changes ends at the terminus
+  t.state='run';t.v=0;
+}
+function stepAI(t,dt){
+  const stops=t.P.stops,here=stops[t.idx],mine=D.lines.includes(t.id)&&here.name===D.name;
+  if(t.state==='dwell'){
+    t.v=0;t.timer-=dt;
+    if(t.timer<=0){t.state='closing';t.timer=2.2;if(mine)chimeClose();}
+  }else if(t.state==='closing'){
+    t.timer-=dt;
+    if(t.timer<=0){
+      if(mine){t.state='ready';t.readyAt=D.time;t.required=pickReq();if(actx)tone(1500,0,.12,.08);}
+      else departTrain(t);
+    }
+  }else if(t.state==='run'){
+    const tgt=stops[t.idx+t.dir].s,dist=(tgt-t.c)*t.dir;
+    const want=Math.min(AI_CRUISE[t.id],Math.sqrt(2*0.85*Math.max(0,dist-0.3)));
+    t.v=Math.max(0,t.v+clamp(1.6*(want-t.v),-1.1,1.0)*dt);
+    t.c+=t.dir*t.v*dt;
+    if(dist<=0.4||(dist<4&&t.v<0.7)||dist<0){
+      t.c=tgt;t.v=0;t.idx+=t.dir;t.state='dwell';
+      const term=t.idx===0||t.idx===stops.length-1;
+      t.timer=(D.lines.includes(t.id)&&stops[t.idx].name===D.name)?7:(8+Math.random()*4)+(term?4:0);
+    }
+  }
+}
+function trainStatus(t){
+  const stops=t.P.stops,here=stops[t.idx].name;
+  if(t.state==='dwell')return 'Boarding at '+here;
+  if(t.state==='closing')return 'Doors closing at '+here;
+  if(t.state==='ready')return 'READY at '+here+' - waiting for you';
+  const nxt=stops[t.idx+t.dir],dist=Math.abs(nxt.s-t.c);
+  return 'To '+nxt.name+' ('+(dist>1000?(dist/1000).toFixed(1)+' km':Math.round(dist)+' m')+')';
+}
+/* --- signals --- */
+function dispOk(t){
+  const waited=D.time-t.readyAt,pts=Math.round(100+Math.max(0,60-waited*6));
+  D.score+=pts;D.done++;if(waited<8)D.fast++;D.lightUp=false;$('lightBtn').classList.remove('on');
+  showMsg('Away! '+LINES[t.id].name+' train dispatched  +'+pts,'good',2500);
+  if(actx){tone(392,0,.25,.1);tone(523,.2,.35,.1);}
+  departTrain(t);
+}
+function dispWrong(t){
+  D.score-=50;D.wrong++;D.lightUp=false;$('lightBtn').classList.remove('on');D.lockout=D.time+2.5;
+  showMsg('Wrong signal! That train needs: '+REQ[t.required]+'  -50','bad',3200);
+  if(actx){tone(220,0,.35,.14);tone(196,.15,.45,.14);}
+}
+function dispEarly(){
+  if(D.time-D.lastEarly<3)return;
+  D.lastEarly=D.time;D.score-=20;D.early++;showMsg('Too early - passengers are still boarding / doors not closed  -20','bad',2600);
+}
+function dispWhistle(){
+  if(ROLE!=='dispatcher'||!started||paused||D.over)return;
+  whistleSound();D.whistleT=D.time;blowTimer=0.8;
+  const t=myTrain();
+  if(!t){showMsg('No train at your platform','',1500);return;}
+  if(t.state!=='ready'){dispEarly();return;}
+  if(D.lockout>D.time)return;
+  if(t.required==='light')dispWrong(t);
+  else if(t.required==='whistle'){if(D.lightUp)dispWrong(t);else dispOk(t);}
+  else if(D.lightUp)dispOk(t);                       // both: light already up
+}
+function dispLight(){
+  if(ROLE!=='dispatcher'||!started||paused||D.over)return;
+  D.lightUp=!D.lightUp;D.lightUpAt=D.time;$('lightBtn').classList.toggle('on',D.lightUp);
+  if(!D.lightUp)return;
+  const t=myTrain();
+  if(!t){showMsg('No train at your platform','',1500);return;}
+  if(t.state!=='ready'){dispEarly();return;}
+  if(D.lockout>D.time)return;
+  if(t.required==='whistle')dispWrong(t);
+  else if(t.required==='both'&&D.time-D.whistleT<3)dispOk(t);   // both: whistle just blown
+}
+function endShift(){
+  D.over=true;
+  const total=Math.round(D.score);
+  const rating=total>=900?'Station master':total>=600?'Senior dispatcher':total>=300?'Dispatcher':'Trainee';
+  $('endtitle').textContent='Shift complete';
+  $('endbody').textContent='Rating: '+rating+'  |  Score '+total;
+  $('endtable').innerHTML=[['Trains dispatched',D.done],['Dispatched within 8 s',D.fast],['Wrong signals',D.wrong],['Signalled too early',D.early]].map(r=>'<tr><td>'+r[0]+'</td><td style="text-align:right">'+r[1]+'</td></tr>').join('');
+  $('again').textContent='Another shift';
+  $('end').style.display='flex';
+}
+function stepDisp(dt){
+  if(D.over)return;
+  D.time+=dt;
+  if(keys.ArrowLeft)D.alook=Math.min(1.3,D.alook+1.4*dt);
+  if(keys.ArrowRight)D.alook=Math.max(-1.3,D.alook-1.4*dt);
+  for(const t of aiTrains)stepAI(t,dt);
+  const mt=myTrain();
+  // a green light on its own is enough for a 'light' train once it has been held up for a moment
+  if(mt&&mt.state==='ready'&&mt.required==='light'&&D.lightUp&&D.time-D.lightUpAt>0.7&&D.lockout<=D.time)dispOk(mt);
+  if(mt&&mt.state==='ready'&&D.time-mt.readyAt>14)D.score-=1.5*dt;           // held up too long
+  // HUD
+  const left=Math.max(0,SHIFT_LEN-D.time);
+  $('dleft').textContent=fmtTime(left);$('score').textContent=Math.max(0,Math.round(D.score));$('time').textContent=fmtTime(left);
+  if(!mt){
+    $('dtrain').textContent='No train at the platform';$('dreq').textContent='';
+    const inc=aiTrains.filter(t=>t.state==='run'&&D.lines.includes(t.id)&&t.P.stops[t.idx+t.dir].name===D.name).sort((a,b)=>Math.abs(a.P.stops[a.idx+a.dir].s-a.c)-Math.abs(b.P.stops[b.idx+b.dir].s-b.c))[0];
+    $('dstate').textContent=inc?LINES[inc.id].name+' train arriving in '+Math.round(Math.abs(inc.P.stops[inc.idx+inc.dir].s-inc.c))+' m':'Waiting for the next train...';
+  }else{
+    $('dtrain').innerHTML='<span style="color:'+LINES[mt.id].color+'">'+LINES[mt.id].name+'</span> train';
+    if(mt.state==='dwell'){$('dstate').textContent='Passengers boarding... '+Math.ceil(mt.timer)+'s';$('dreq').textContent='';}
+    else if(mt.state==='closing'){$('dstate').textContent='Doors closing...';$('dreq').textContent='';}
+    else{$('dstate').textContent='Doors closed - waiting '+Math.round(D.time-mt.readyAt)+'s';$('dreq').textContent='Signal: '+REQ[mt.required];}
+  }
+  $('dboard').innerHTML='<small style="opacity:.65;letter-spacing:.08em;text-transform:uppercase;font-size:11px">Network</small>'+aiTrains.map(t=>'<div class="row"><i style="background:'+LINES[t.id].color+'"></i><b>'+LINES[t.id].second+'</b> '+trainStatus(t)+'</div>').join('');
+  if(blowTimer>0){blowTimer-=dt;$('whistleBtn').classList.toggle('blow',blowTimer>0);}
+  if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)$('msg').classList.remove('show');}
+  if(actx){
+    let near=1e9,spd=0;
+    for(const t of aiTrains){const p=t.P.at(t.c),d=Math.hypot(p.x-D.stand.x,p.z-D.stand.z);if(d<near){near=d;spd=t.v;}}
+    noiseGain.gain.value=0.02+clamp(1-near/450,0,1)*Math.min(1,spd/20)*0.25;noiseFilter.frequency.value=180+spd*22;
+    rainGain.gain.value=CFG.weather==='rain'?0.07:0;
+  }
+  if(D.time>=SHIFT_LEN)endShift();
+}
+function renderDisp(dt){
+  for(const t of aiTrains)placeCars(t.tr,t.P,t.c,t.dir);
+  train.visible=false;
+  camera.rotation.order='YXZ';
+  camera.position.set(D.stand.x,2.7,D.stand.z);
+  camera.rotation.set(-0.04,D.base+D.mlook+D.alook,0);
+  skyGroup.position.copy(camera.position);
+  headlight.intensity=0;
+  updateRain(dt);updateFlyer();
+  renderer.render(scene,camera);
+}
+addEventListener('mousemove',e=>{if(ROLE==='dispatcher')D.mlook=-(e.clientX/innerWidth-0.5)*2.4;});
+$('whistleBtn').onclick=dispWhistle;
+$('lightBtn').onclick=dispLight;
+
 /* ---- input ---- */
 addEventListener('keydown',e=>{
   if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();
   keys[e.code]=true;
   if(e.repeat)return;
+  if(ROLE==='dispatcher'){
+    if(e.code==='Space'){dispWhistle();return;}
+    if(e.code==='KeyG'||e.code==='KeyE'){dispLight();return;}
+    if(e.code==='KeyR'&&started){restartRole();return;}
+    if(['KeyD','KeyC','KeyW','KeyS','KeyH'].includes(e.code))return;
+  }
   if(e.code==='KeyD')pressDoor();
   if(e.code==='KeyC')camMode=camMode==='cab'?'chase':'cab';
   if(e.code==='KeyT'){const o=['day','dusk','night'];setEnv(o[(o.indexOf(CFG.time)+1)%3]);showMsg('Time of day: '+CFG.time,'',1500);}
@@ -781,9 +1034,10 @@ addEventListener('keydown',e=>{
   if(e.code==='Enter'&&!started)startGame();
 });
 addEventListener('keyup',e=>{keys[e.code]=false;});
-function startGame(){if(started)return;started=true;$('start').style.display='none';initAudio();resetGame();}
+function restartRole(){if(ROLE==='dispatcher')resetDisp();else resetGame();}
+function startGame(){if(started)return;started=true;$('start').style.display='none';initAudio();restartRole();}
 $('go').onclick=startGame;
-$('again').onclick=()=>{resetGame();};
+$('again').onclick=restartRole;
 
 /* ---- simulation ---- */
 function finish(missed){
@@ -921,13 +1175,29 @@ $('selRoute').value=CFG.route;
 $('selRoute').onchange=e=>{CFG.route=e.target.value;syncURL();location.reload();};
 $('selTime').onchange=e=>setEnv(e.target.value);
 $('selWeather').onchange=e=>setEnv(null,e.target.value);
+/* role / station selectors and role-specific start screen */
+{
+  $('selRole').value=ROLE;
+  $('selRole').onchange=e=>{CFG.role=e.target.value;syncURL();location.reload();};
+  $('selStation').innerHTML=ALL_STATIONS.map(n=>'<option>'+n+'</option>').join('');
+  $('selStation').value=ALL_STATIONS.includes(CFG.station)?CFG.station:'Sebford Central';
+  $('selStation').onchange=e=>{CFG.station=e.target.value;syncURL();location.reload();};
+  if(ROLE==='dispatcher'){
+    document.title='Sebford Dispatcher - Train Driver';
+    $('title').innerHTML='Sebford <span>Dispatcher</span>';
+    $('intro').innerHTML='You are the dispatcher at <b>'+$('selStation').value+'</b>. One train per line (Aqua and Airlink) shuttles back and forth along its line. When a train at your platform has finished boarding and closed its doors, the order panel tells you which signal to give: the <b>whistle</b>, the <b>green light</b> (round board on a pole), or <b>both</b>. Wrong signals and signalling too early cost points; sending trains away quickly earns more.';
+    $('ctlDriver').classList.add('hidden');$('ctlDisp').classList.remove('hidden');
+    $('lblLine').classList.add('hidden');$('lblDir').classList.add('hidden');$('lblStation').classList.remove('hidden');
+    $('go').textContent='Start shift';
+  }
+}
 setEnv();
-resetGame();
+if(ROLE==='dispatcher')resetDisp();else resetGame();
 let last=performance.now();
 function loop(now){
   const dt=Math.min(0.05,(now-last)/1000);last=now;
-  if(started&&!paused)step(dt);
-  render(dt);
+  if(ROLE==='dispatcher'){if(started&&!paused)stepDisp(dt);renderDisp(dt);}
+  else{if(started&&!paused)step(dt);render(dt);}
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
