@@ -925,14 +925,14 @@ function pickVoice(){
   const gb=vs.filter(x=>/en-GB/i.test(x.lang)),pool=gb.concat(vs.filter(x=>!gb.includes(x)));
   const female=/female|zira|hazel|susan|samantha|serena|libby|sonia|karen|moira|fiona|tessa|heera/i;
   const male=/\bmale\b|david|george|mark|daniel|guy|ryan|james|alex|fred|thomas|oliver|arthur|rishi/i;
-  const hit=LINE.id==='metro'?(pool.filter(x=>!female.test(x.name)&&!male.test(x.name))[0]||pool[2]||pool[0]):pool.find(x=>(AIRLINK?male:female).test(x.name));
+  const hit=LINE.id==='metro'?(vs.find(x=>!/en-GB/i.test(x.lang)&&/en-(US|AU|IE|NZ|ZA|IN|CA)/i.test(x.lang)&&female.test(x.name))||vs.find(x=>!/en-GB/i.test(x.lang))||pool[2]||pool[0]):pool.find(x=>(AIRLINK?male:female).test(x.name));
   return hit||(AIRLINK?(pool[1]||pool[0]):pool[0]);
 }
 function speak(text){
   if(muted||!('speechSynthesis' in window))return;
   try{
-    speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='en-GB';
-    u.pitch=AIRLINK?0.7:LINE.id==='metro'?0.95:1.15;u.rate=AIRLINK?1.05:LINE.id==='metro'?1.12:0.95;
+    speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=LINE.id==='metro'?'en-US':'en-GB';
+    u.pitch=AIRLINK?0.7:LINE.id==='metro'?1.35:1.15;u.rate=AIRLINK?1.05:LINE.id==='metro'?1.08:0.95;
     const vo=pickVoice();if(vo)u.voice=vo;
     speechSynthesis.speak(u);
   }catch(e){}
