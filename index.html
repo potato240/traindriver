@@ -56,6 +56,9 @@
   kbd{background:#20404c;border:1px solid #3a6676;border-radius:4px;padding:1px 7px;font-family:inherit;font-size:13px}
   button{background:var(--aqua);color:#032026;border:0;border-radius:8px;padding:12px 26px;font-size:17px;font-weight:700;cursor:pointer}
   #end{display:none}
+  .opts{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 18px}
+  .opts label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;display:flex;flex-direction:column;gap:4px}
+  .opts select{background:#14303b;color:#fff;border:1px solid #3a6676;border-radius:6px;padding:7px 10px;font-size:14px;text-transform:none;letter-spacing:0}
   .hidden{display:none!important}
   @media(max-width:760px){#routebar{display:none}#next{min-width:0}}
 </style>
@@ -86,10 +89,16 @@
       <tr><td><kbd>W</kbd> / <kbd>&uarr;</kbd></td><td>Raise the set speed - the train speeds up to it</td></tr>
       <tr><td><kbd>S</kbd> / <kbd>&darr;</kbd></td><td>Lower the set speed - the train slows down to it</td></tr>
       <tr><td><kbd>Space</kbd></td><td>Emergency stop</td></tr>
-      <tr><td><kbd>H</kbd></td><td>Horn</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>M</kbd></td><td>Horn / mute all sound</td></tr>
+      <tr><td><kbd>T</kbd> / <kbd>Y</kbd></td><td>Change time of day / weather</td></tr>
       <tr><td><kbd>C</kbd></td><td>Cab / chase camera</td></tr>
       <tr><td><kbd>P</kbd> / <kbd>R</kbd></td><td>Pause / restart</td></tr>
     </table>
+    <div class="opts">
+      <label>Route <select id="selRoute"><option value="out">Central &rarr; Trent Docks</option><option value="return">Trent Docks &rarr; Central</option></select></label>
+      <label>Time <select id="selTime"><option value="day">Day</option><option value="dusk">Dusk</option><option value="night">Night</option></select></label>
+      <label>Weather <select id="selWeather"><option value="clear">Clear</option><option value="rain">Rain</option><option value="fog">Fog</option></select></label>
+    </div>
     <button id="go">Start driving</button>
   </div>
 </div>
@@ -129,6 +138,16 @@ const STATIONS = [
   { name:'Trent Docks',       wp:[650,2050] }
 ];
 
+/* settings come from the URL so route / time / weather survive a reload */
+const Q=new URLSearchParams(location.search);
+const CFG={
+  route:Q.get('route')==='return'?'return':'out',
+  time:['day','dusk','night'].includes(Q.get('time'))?Q.get('time'):'day',
+  weather:['clear','rain','fog'].includes(Q.get('weather'))?Q.get('weather'):'clear'
+};
+const REVERSE=CFG.route==='return';
+if(REVERSE){WAYPOINTS.reverse();STATIONS.reverse();}
+
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 const rnd = mulberry32(20240607);
@@ -166,6 +185,8 @@ STATIONS.forEach(st=>{
   for(let i=0;i<=L;i++){const d=(Px[i]-st.wp[0])**2+(Pz[i]-st.wp[1])**2;if(d<best){best=d;bi=i;}}
   st.s=bi; st.target=bi+STOP_AHEAD;
 });
+const CEN=STATIONS.find(x=>x.name==='Sebford Central');
+const SHED=REVERSE?[CEN.s-85,CEN.s+165]:[CEN.s-165,CEN.s+85];   // trainshed span along the path
 
 
 /* ---- spatial hash of the track so scenery stays clear of it ---- */
@@ -190,20 +211,32 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0xcfe6f5);
 scene.fog=new THREE.Fog(0xcfe6f5,350,2300);
 const camera=new THREE.PerspectiveCamera(62,1,0.3,3600);
-scene.add(new THREE.HemisphereLight(0xe3f1ff,0x6f8f55,0.95));
+const hemi=new THREE.HemisphereLight(0xe3f1ff,0x6f8f55,0.95);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xfff0d0,0.9);sun.position.set(400,600,250);scene.add(sun);
+const headlight=new THREE.SpotLight(0xfff4d6,0,170,0.45,0.55,1);scene.add(headlight,headlight.target);
 
 const lam=(c,o)=>new THREE.MeshLambertMaterial(Object.assign({color:c},o||{}));
 function box(w,h,d,mat,x,y,z,parent){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);(parent||scene).add(m);return m;}
 
-/* sky dome */
-{
-  const c=document.createElement('canvas');c.width=4;c.height=256;const g=c.getContext('2d');
-  const gr=g.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#3f86c9');gr.addColorStop(.55,'#9cc9ec');gr.addColorStop(1,'#cfe6f5');
-  g.fillStyle=gr;g.fillRect(0,0,4,256);
-  const dome=new THREE.Mesh(new THREE.SphereGeometry(3000,24,16),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),side:THREE.BackSide,fog:false,depthWrite:false}));
-  dome.name='dome';scene.add(dome);
-}
+/* sky dome, stars, moon (all follow the camera) */
+const skyGroup=new THREE.Group();scene.add(skyGroup);
+const skyCanvas=document.createElement('canvas');skyCanvas.width=4;skyCanvas.height=256;
+const skyTex=new THREE.CanvasTexture(skyCanvas);
+skyGroup.add(new THREE.Mesh(new THREE.SphereGeometry(3000,24,16),new THREE.MeshBasicMaterial({map:skyTex,side:THREE.BackSide,fog:false,depthWrite:false})));
+const stars=(()=>{
+  const p=[];for(let i=0;i<700;i++){const th=Math.random()*Math.PI*2,ph=Math.acos(0.05+Math.random()*0.95);p.push(2900*Math.sin(ph)*Math.cos(th),2900*Math.cos(ph),2900*Math.sin(ph)*Math.sin(th));}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+  const o=new THREE.Points(g,new THREE.PointsMaterial({color:0xffffff,size:2.2,sizeAttenuation:false,fog:false,transparent:true,opacity:0,depthWrite:false}));skyGroup.add(o);return o;
+})();
+const moon=new THREE.Mesh(new THREE.SphereGeometry(60,16,12),new THREE.MeshBasicMaterial({color:0xf2f4ff,fog:false}));moon.position.set(900,1500,-2300);skyGroup.add(moon);
+/* rain streaks (positions are rebuilt around the camera every frame) */
+const RAIN_N=2200,rainBase=new Float32Array(RAIN_N*3),rainPos=new Float32Array(RAIN_N*6);
+for(let i=0;i<RAIN_N;i++){rainBase[i*3]=(Math.random()-.5)*70;rainBase[i*3+1]=Math.random()*40-6;rainBase[i*3+2]=(Math.random()-.5)*70;}
+const rainGeo=new THREE.BufferGeometry();rainGeo.setAttribute('position',new THREE.BufferAttribute(rainPos,3));
+const rain=new THREE.LineSegments(rainGeo,new THREE.LineBasicMaterial({color:0xb4c8da,transparent:true,opacity:0.5,fog:false}));
+rain.frustumCulled=false;rain.visible=false;scene.add(rain);
+const ENV_WIN=[];     // building window materials (glow at night)
+let headBase=0;       // headlight intensity chosen by time/weather
 /* ground, sea, beach */
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(6000,6000),lam(0x7db35c));ground.rotation.x=-Math.PI/2;ground.position.set(400,-0.3,1000);scene.add(ground);
 const SEA=[-800,450,550,1040], BEACH=[-800,470,1040,1078], DOCKWATER=[350,1100,2140,2700], QUAY=[400,900,2092,2142];
@@ -248,12 +281,12 @@ flatRect(QUAY,-0.12,lam(0x8d9296));
   let n=0;const wire=[];
   for(let k=0;k<=count;k++){
     const s=k*50+10,p=at(s);
-    if(s>STATIONS[0].s-160&&s<STATIONS[0].s+80)continue;
+    if(s>SHED[0]&&s<SHED[1])continue;
     const lx=p.tz,lz=-p.tx; // left of travel
     dummy.position.set(p.x+lx*2.9,3.3,p.z+lz*2.9);dummy.rotation.set(0,0,0);dummy.updateMatrix();masts.setMatrixAt(n++,dummy.matrix);
   }
   masts.count=n;scene.add(masts);
-  for(let s=STATIONS[0].s+80;s<L-1;s+=5){const a=at(s),b=at(s+5);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
+  for(let s=0;s<L-6;s+=5){if(s>SHED[0]&&s<SHED[1])continue;const a=at(s),b=at(s+5);wire.push(a.x,5.7,a.z,b.x,5.7,b.z);}
   const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
   scene.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0x2d3338})));
 }
@@ -270,6 +303,7 @@ function labelTex(text,bg,fg,w,h){
 }
 
 /* ---- stations ---- */
+const matLamp=new THREE.MeshBasicMaterial({color:0xfff3c4});
 const matPlat=lam(0xbcbcb8),matRoof=lam(0x2f4858),matPost=lam(0x57656d),matYellow=lam(0xf2c500);
 STATIONS.forEach((st,k)=>{
   const g=new THREE.Group();g.position.set(Px[st.s],0,Pz[st.s]);g.rotation.y=YAW[st.s];scene.add(g);
@@ -277,7 +311,7 @@ STATIONS.forEach((st,k)=>{
   box(6,1.0,PLAT_HALF*2,matPlat,-4.7,0.5,0,g);
   box(0.3,0.02,PLAT_HALF*2,matYellow,-2.0,1.01,0,g);
   box(7.8,0.25,92,matRoof,-5.0,4.8,0,g);
-  for(let z=-45;z<=45;z+=15) box(0.3,4.8,0.3,matPost,-7.4,2.4,z,g);
+  for(let z=-45;z<=45;z+=15){box(0.3,4.8,0.3,matPost,-7.4,2.4,z,g);box(0.5,0.12,1.4,matLamp,-5.2,4.6,z,g);}
   const nameTex=labelTex(st.name,'#00a9b5','#ffffff');
   for(const z of [-38,0,38]){
     const sign=new THREE.Mesh(new THREE.PlaneGeometry(6,1.5),new THREE.MeshBasicMaterial({map:nameTex}));
@@ -289,31 +323,39 @@ STATIONS.forEach((st,k)=>{
   const sb=new THREE.Mesh(new THREE.PlaneGeometry(2.4,0.9),new THREE.MeshBasicMaterial({map:stopTex,side:THREE.DoubleSide}));
   sb.position.set(-3.1,2.9,STOP_AHEAD+2);sb.rotation.y=Math.PI;g.add(sb);
   // station building behind platform
-  box(10,5,34,lam(k===0?0xb5a58a:0xc9b79a),-13.5,2.5,-8,g);
+  box(10,5,34,lam(st===CEN?0xb5a58a:0xc9b79a),-13.5,2.5,-8,g);
   box(10.6,0.5,34.6,lam(0x6a4a3a),-13.5,5.2,-8,g);
-  if(k===0){ // Sebford Central trainshed + terminus wall + buffers
-    box(16,0.5,236,lam(0x37505e),0,7.2,-32,g);
-    for(let z=-146;z<=82;z+=19){box(0.4,7.2,0.4,matPost,-7.6,3.6,z,g);box(0.4,7.2,0.4,matPost,7.6,3.6,z,g);}
-    box(26,16,3,lam(0x8c7a62),0,8,-153,g);
-    box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,-148.5,g);
-    box(1.2,0.3,0.9,lam(0x222222),0,1.5,-148.5,g);
-    // opposite platform
-    box(6,1.0,170,matPlat,4.7,0.5,-60,g);
+  if(st===CEN){ // Sebford Central trainshed + terminus wall (behind the train outbound, ahead of it on the return)
+    const f=new THREE.Group();f.position.copy(g.position);f.rotation.y=YAW[st.s]+(REVERSE?Math.PI:0);scene.add(f);
+    const xs=REVERSE?-1:1;
+    box(16,0.5,236,lam(0x37505e),0,7.2,-32,f);
+    for(let z=-146;z<=82;z+=19){box(0.4,7.2,0.4,matPost,-7.6,3.6,z,f);box(0.4,7.2,0.4,matPost,7.6,3.6,z,f);box(0.6,0.12,1.4,matLamp,0,6.9,z,f);}
+    box(26,16,3,lam(0x8c7a62),0,8,-153,f);
+    box(6,1.0,170,matPlat,4.7*xs,0.5,-60,f);   // opposite platform
   }
 });
-/* terminus end of line buffers at Trent Docks */
-{ const p=at(L-1),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
-  box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,1,b);box(0.3,1.6,0.3,matPost,-1.2,0.8,1.6,b);box(0.3,1.6,0.3,matPost,1.2,0.8,1.6,b); }
+/* buffer stops at both ends of the line */
+for(const [s0,dir] of [[1,-1],[L-1,1]]){
+  const p=at(s0),b=new THREE.Group();b.position.set(p.x,0,p.z);b.rotation.y=Math.atan2(p.tx,p.tz);scene.add(b);
+  box(2.9,1.1,0.9,lam(0xc0281e),0,0.8,dir*1,b);box(0.3,1.6,0.3,matPost,-1.2,0.8,dir*1.6,b);box(0.3,1.6,0.3,matPost,1.2,0.8,dir*1.6,b);
+}
 
 /* ---- buildings ---- */
-function winTex(tint){
-  const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
-  g.fillStyle=tint;g.fillRect(0,0,128,128);
-  for(let r=0;r<4;r++)for(let q=0;q<4;q++){g.fillStyle=rnd()<0.3?'#ffe9a8':'#3a566f';g.fillRect(q*32+6,r*32+7,20,17);}
-  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=4;return t;
+function winTex(tint){   // returns [colour map, emissive map of just the lit windows]
+  const lit=[];for(let i=0;i<16;i++)lit.push(rnd()<0.3);
+  const mk=em=>{
+    const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    g.fillStyle=em?'#000':tint;g.fillRect(0,0,128,128);
+    for(let r=0;r<4;r++)for(let q=0;q<4;q++){const l=lit[r*4+q];if(em&&!l)continue;g.fillStyle=l?'#ffe9a8':'#3a566f';g.fillRect(q*32+6,r*32+7,20,17);}
+    const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=4;return t;
+  };
+  return [mk(false),mk(true)];
 }
 const TINTS=['#c9d3da','#aebdc7','#d9d2c2','#9fb3c4','#bfc7cf'];
-const BMATS=TINTS.map(t=>{const w=new THREE.MeshLambertMaterial({map:winTex(t)}),r=lam(0x7d858b);return [w,w,r,r,w,w];});
+const BMATS=TINTS.map(t=>{
+  const [m,e]=winTex(t),w=new THREE.MeshLambertMaterial({map:m,emissive:0xffffff,emissiveMap:e,emissiveIntensity:0}),r=lam(0x7d858b);
+  ENV_WIN.push(w);return [w,w,r,r,w,w];
+});
 function addBuilding(x,z,w,d,h,mats){
   const geo=new THREE.BoxGeometry(w,h,d),uv=geo.attributes.uv;
   for(let i=0;i<24;i++){let su=1,sv=1;if(i<8){su=d/16;sv=h/16;}else if(i>=16){su=w/16;sv=h/16;}uv.setXY(i,uv.getX(i)*su,uv.getY(i)*sv);}
@@ -431,10 +473,10 @@ const MAX_SET=31.3, SET_RATE=2.5;   // 70 mph max set speed; W/S change it by ~5
 let s,v,setSpeed,phase,dwell,next,score,elapsed,ended,stopsLog,msgTimer=0;
 
 function resetGame(){
-  s=STATIONS[0].target;v=0;setSpeed=0;phase='dwell';dwell=5;next=1;score=0;elapsed=0;ended=false;stopsLog=[];
+  s=STATIONS[0].target;v=0;setSpeed=0;phase='dwell';dwell=5;next=1;score=0;elapsed=0;ended=false;stopsLog=[];pipDone=false;approachDone={};
   $('end').style.display='none';
   STATIONS.forEach((st,i)=>{const e=$('st'+i);if(e)e.classList.toggle('done',i===0);});
-  showMsg('Welcome aboard. Doors are open at Sebford Central.','',4500);
+  showMsg('Welcome aboard. Doors are open at '+STATIONS[0].name+'.','',4500);
 }
 // route bar
 {
@@ -448,21 +490,97 @@ function showMsg(t,kind,ms){
 function fmtTime(t){t=Math.floor(t);return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
 
 /* ---- audio ---- */
-let actx,noiseGain,noiseFilter,hornGain;
+let actx,master,noiseGain,noiseFilter,hornGain,rainGain,whiteBuf,muted=false,clackDist=0,pipDone=false,approachDone={};
 function initAudio(){
   try{
     actx=new (window.AudioContext||window.webkitAudioContext)();
+    master=actx.createGain();master.gain.value=muted?0:1;master.connect(actx.destination);
+    // low rumble of the train
     const buf=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate),d=buf.getChannelData(0);let last=0;
     for(let i=0;i<d.length;i++){last=(last+0.02*(Math.random()*2-1))/1.02;d[i]=last*3.5;}
     const src=actx.createBufferSource();src.buffer=buf;src.loop=true;
     noiseFilter=actx.createBiquadFilter();noiseFilter.type='lowpass';noiseFilter.frequency.value=300;
     noiseGain=actx.createGain();noiseGain.gain.value=0;
-    src.connect(noiseFilter);noiseFilter.connect(noiseGain);noiseGain.connect(actx.destination);src.start();
+    src.connect(noiseFilter);noiseFilter.connect(noiseGain);noiseGain.connect(master);src.start();
+    // white noise: rail clacks + rain
+    whiteBuf=actx.createBuffer(1,actx.sampleRate,actx.sampleRate);
+    const w=whiteBuf.getChannelData(0);for(let i=0;i<w.length;i++)w[i]=Math.random()*2-1;
+    const rs=actx.createBufferSource();rs.buffer=whiteBuf;rs.loop=true;
+    const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=1500;
+    rainGain=actx.createGain();rainGain.gain.value=0;
+    rs.connect(hp);hp.connect(rainGain);rainGain.connect(master);rs.start();
+    // horn
     hornGain=actx.createGain();hornGain.gain.value=0;
     const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1400;
     for(const f of [311.1,370]){const o=actx.createOscillator();o.type='sawtooth';o.frequency.value=f;o.connect(hornGain);o.start();}
-    hornGain.connect(lp);lp.connect(actx.destination);
+    hornGain.connect(lp);lp.connect(master);
   }catch(e){actx=null;}
+}
+function clack(vol,delay){   // one wheel hitting a rail joint
+  if(!actx)return;const t=actx.currentTime+(delay||0);
+  const src=actx.createBufferSource();src.buffer=whiteBuf;
+  const bp=actx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=650+Math.random()*500;bp.Q.value=1.1;
+  const g=actx.createGain();g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+0.004);g.gain.exponentialRampToValueAtTime(0.0001,t+0.09);
+  src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.12);
+  const o=actx.createOscillator(),og=actx.createGain();o.type='sine';o.frequency.setValueAtTime(95,t);o.frequency.exponentialRampToValueAtTime(52,t+0.09);
+  og.gain.setValueAtTime(vol*0.9,t);og.gain.exponentialRampToValueAtTime(0.0001,t+0.11);o.connect(og);og.connect(master);o.start(t);o.stop(t+0.13);
+}
+function tone(freq,at0,dur,vol){
+  if(!actx)return;const t=actx.currentTime+at0,o=actx.createOscillator(),g=actx.createGain();
+  o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+0.05);
+}
+const chimeOpen=()=>{tone(880,0,.5,.2);tone(660,.38,.8,.2);};            // ding-dong as the doors open
+const chimeClose=()=>{tone(1100,0,.14,.14);tone(1100,.28,.14,.14);tone(1100,.56,.14,.14);};  // door-closing pips
+const chimeAnn=()=>{tone(659,0,.35,.16);tone(523,.3,.35,.16);tone(784,.6,.55,.16);};         // announcement jingle
+function speak(text){
+  if(muted||!('speechSynthesis' in window))return;
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='en-GB';u.rate=0.95;
+    const v=speechSynthesis.getVoices().find(x=>/en-GB/i.test(x.lang));if(v)u.voice=v;speechSynthesis.speak(u);}catch(e){}
+}
+function announce(text){if(!actx)return;chimeAnn();setTimeout(()=>speak(text),1300);}
+
+/* ---- time of day + weather ---- */
+const ENV={
+  day:  {sky:['#3f86c9','#9cc9ec','#cfe6f5'],fog:0xcfe6f5,hemi:[0xe3f1ff,0x6f8f55,0.95],sun:[0xfff0d0,0.9,[400,600,250]],win:0,  stars:0,moon:false,head:0},
+  dusk: {sky:['#3d3f7a','#c9708a','#f4b183'],fog:0xf0a478,hemi:[0xffd2b0,0x4a3a40,0.62],sun:[0xff8a4a,0.85,[-600,140,300]],win:0.7,stars:0.25,moon:false,head:1.6},
+  night:{sky:['#04070f','#0a1630','#111f3a'],fog:0x0b1424,hemi:[0x5668a8,0x1a2230,0.42],sun:[0x8aa4ff,0.3,[200,500,-300]],win:1,  stars:1,moon:true,head:3.2}
+};
+function applyEnv(){
+  const e=ENV[CFG.time],w=CFG.weather;
+  const lum=c=>c.r*0.3+c.g*0.59+c.b*0.11;
+  const greyer=(c,k)=>{const l=lum(c)*0.95;return c.clone().lerp(new THREE.Color(l,l,l*1.03),k);};
+  let fogCol=new THREE.Color(e.fog),top=new THREE.Color(e.sky[0]),mid=new THREE.Color(e.sky[1]),bot=new THREE.Color(e.sky[2]);
+  let near=350,far=2300,dim=1;
+  if(w==='rain'){fogCol=greyer(fogCol,.7);top=greyer(top,.8).multiplyScalar(.85);mid=greyer(mid,.8).multiplyScalar(.9);bot=fogCol.clone();near=120;far=1300;dim=.75;}
+  if(w==='fog'){fogCol=greyer(fogCol,.75);top=greyer(top,.9);mid=fogCol.clone();bot=fogCol.clone();near=8;far=420;dim=.85;}
+  const g=skyCanvas.getContext('2d'),gr=g.createLinearGradient(0,0,0,256);
+  gr.addColorStop(0,'#'+top.getHexString());gr.addColorStop(.55,'#'+mid.getHexString());gr.addColorStop(1,'#'+bot.getHexString());
+  g.fillStyle=gr;g.fillRect(0,0,4,256);skyTex.needsUpdate=true;
+  scene.background=fogCol;scene.fog.color.copy(fogCol);scene.fog.near=near;scene.fog.far=far;
+  hemi.color.setHex(e.hemi[0]);hemi.groundColor.setHex(e.hemi[1]);hemi.intensity=e.hemi[2]*dim;
+  sun.color.setHex(e.sun[0]);sun.intensity=e.sun[1]*dim*(w==='clear'?1:0.7);sun.position.set(e.sun[2][0],e.sun[2][1],e.sun[2][2]);
+  ENV_WIN.forEach(m=>m.emissiveIntensity=e.win);
+  stars.material.opacity=w==='clear'?e.stars:0;moon.visible=e.moon&&w==='clear';
+  headBase=e.head+(w==='fog'?1.8:0)+(w==='rain'&&CFG.time==='day'?1:0);
+  rain.visible=(w==='rain');
+}
+function syncURL(){const p=new URLSearchParams();p.set('route',CFG.route);p.set('time',CFG.time);p.set('weather',CFG.weather);try{history.replaceState(null,'','?'+p);}catch(e){}}
+function setEnv(time,weather){
+  if(time)CFG.time=time;if(weather)CFG.weather=weather;
+  applyEnv();syncURL();$('selTime').value=CFG.time;$('selWeather').value=CFG.weather;
+}
+function updateRain(dt){
+  if(!rain.visible)return;
+  const p=at(s),vx=p.tx*v,vz=p.tz*v,cx=camera.position.x,cy=camera.position.y,cz=camera.position.z;
+  for(let i=0;i<RAIN_N;i++){
+    let x=rainBase[i*3]-vx*dt,y=rainBase[i*3+1]-26*dt,z=rainBase[i*3+2]-vz*dt;
+    if(y<-6)y+=46;if(x<-35)x+=70;else if(x>35)x-=70;if(z<-35)z+=70;else if(z>35)z-=70;
+    rainBase[i*3]=x;rainBase[i*3+1]=y;rainBase[i*3+2]=z;
+    const k=i*6;rainPos[k]=cx+x;rainPos[k+1]=cy+y;rainPos[k+2]=cz+z;
+    rainPos[k+3]=cx+x+vx*0.025;rainPos[k+4]=cy+y+0.7;rainPos[k+5]=cz+z+vz*0.025;
+  }
+  rainGeo.attributes.position.needsUpdate=true;
 }
 
 /* ---- input ---- */
@@ -471,6 +589,9 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.repeat)return;
   if(e.code==='KeyC')camMode=camMode==='cab'?'chase':'cab';
+  if(e.code==='KeyT'){const o=['day','dusk','night'];setEnv(o[(o.indexOf(CFG.time)+1)%3]);showMsg('Time of day: '+CFG.time,'',1500);}
+  if(e.code==='KeyY'){const o=['clear','rain','fog'];setEnv(null,o[(o.indexOf(CFG.weather)+1)%3]);showMsg('Weather: '+CFG.weather,'',1500);}
+  if(e.code==='KeyM'){muted=!muted;if(master)master.gain.value=muted?0:1;if(muted&&'speechSynthesis' in window)speechSynthesis.cancel();showMsg(muted?'Sound off':'Sound on','',1200);}
   if(e.code==='KeyP'&&started)paused=!paused,showMsg(paused?'Paused':'Resumed','',1200);
   if(e.code==='KeyR'&&started){resetGame();}
   if(e.code==='Enter'&&!started)startGame();
@@ -510,15 +631,23 @@ function step(dt){
 
   if(phase==='dwell'){
     dwell-=dt;
-    if(dwell<=0){phase='run';showMsg('Doors closed - ready to depart (hold W)','good',3000);}
+    if(dwell<=1.4&&!pipDone){pipDone=true;chimeClose();}
+    if(dwell<=0){
+      phase='run';showMsg('Doors closed - ready to depart (hold W)','good',3000);
+      announce('This is the Aqua line service to '+STATIONS[STATIONS.length-1].name+'. The next station is '+STATIONS[next].name+'.');
+    }
   } else if(phase==='run'&&next<STATIONS.length){
     const st=STATIONS[next],stopped=v<0.05&&setSpeed===0;
+    if(!approachDone[next]&&st.target-s<450&&v>3){approachDone[next]=true;announce('We are now approaching '+st.name+'.');}
     if(stopped&&s>=st.target-30&&s<=st.target+6){
       const err=st.target-s,pts=Math.round(clamp(1000-Math.abs(err)*45,100,1000));
       score+=pts;stopsLog.push({name:st.name,note:(err>=0?err.toFixed(1)+' m short':Math.abs(err).toFixed(1)+' m over')+(Math.abs(err)<2?'  - perfect!':''),pts});
       $('st'+next).classList.add('done');
       showMsg(st.name+(Math.abs(err)<2?' - perfect stop! +':' - stopped. +')+pts,'good',3500);
-      if(next===STATIONS.length-1){finish(false);} else{phase='dwell';dwell=6;next++;}
+      chimeOpen();
+      const lastStop=next===STATIONS.length-1;
+      setTimeout(()=>speak(lastStop?'This train terminates here, at '+st.name+'. All change please. Thank you for travelling on the Aqua line.':'Welcome to '+st.name+'. Please mind the gap between the train and the platform.'),1500);
+      if(lastStop){finish(false);} else{phase='dwell';dwell=6;pipDone=false;next++;}
     } else if(s>st.target+6){
       score-=300;stopsLog.push({name:st.name,note:'overshot the platform',pts:-300});
       showMsg('Overshot '+st.name+'! -300','bad',3500);
@@ -544,6 +673,11 @@ function step(dt){
   if(actx){
     noiseGain.gain.value=0.03+Math.min(1,v/28)*0.22;noiseFilter.frequency.value=180+v*22;
     hornGain.gain.setTargetAtTime(keys.KeyH?0.1:0,actx.currentTime,0.03);
+    rainGain.gain.value=CFG.weather==='rain'?0.07:0;
+    if(v>0.8){   // rail-joint clacks every 18 m, two axles per bogie
+      clackDist+=v*dt;
+      while(clackDist>=18){clackDist-=18;const vol=Math.min(0.4,0.07+v/28*0.3);clack(vol,0);clack(vol*0.8,2.6/Math.max(v,2));}
+    }
   }
 }
 let bobT=0;
@@ -561,12 +695,21 @@ function render(dt){
     const f=at(s-45),a=at(s-12);
     camera.position.set(f.x,9,f.z);camera.lookAt(a.x,2.5,a.z);
   }
-  scene.getObjectByName('dome').position.copy(camera.position);
+  skyGroup.position.copy(camera.position);
+  // headlight on the front of the train
+  const hp=at(s+1),ha=at(s+70);
+  headlight.intensity=headBase;headlight.position.set(hp.x,1.6,hp.z);headlight.target.position.set(ha.x,0.5,ha.z);
+  updateRain(dt);
   renderer.render(scene,camera);
 }
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
 
+$('selRoute').value=CFG.route;
+$('selRoute').onchange=e=>{CFG.route=e.target.value;syncURL();location.reload();};
+$('selTime').onchange=e=>setEnv(e.target.value);
+$('selWeather').onchange=e=>setEnv(null,e.target.value);
+setEnv();
 resetGame();
 let last=performance.now();
 function loop(now){
